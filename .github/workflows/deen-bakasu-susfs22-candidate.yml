@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build-susfs22-candidate:
+  build-bakasu-gcc49-control:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -25,13 +25,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev make python3 git curl cpio patch zip
 
-      - name: Install and verify the GCC 4.9 toolchain used by known Deen kernels
+      - name: Install and verify GCC 4.9 toolchain
         run: |
           set -euo pipefail
           git clone --depth=1 --branch master https://github.com/KudProject/aarch64-linux-android-4.9.git toolchain
           test -x toolchain/bin/aarch64-linux-android-gcc
           mkdir -p artifacts
-          toolchain/bin/aarch64-linux-android-gcc --version | head -n 1 | tee artifacts/toolchain-version.txt
+          toolchain/bin/aarch64-linux-android-gcc --version | sed -n '1p' | tee artifacts/toolchain-version.txt
 
       - name: Integrate pinned BakaSU source
         run: |
@@ -45,12 +45,12 @@ jobs:
           echo "$ACTUAL_COMMIT" | tee bakasu-source-commit.txt
           test "$ACTUAL_COMMIT" = "$BAKASU_COMMIT"
           ln -s ../KernelSU/kernel drivers/kernelsu
-          grep -q 'kernelsu' drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q "kernelsu" drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
           grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           test -L drivers/kernelsu
           test -f drivers/kernelsu/Kconfig
 
-      - name: Configure BakaSU-only control profile (SUSFS fully disabled)
+      - name: Configure BakaSU-only control profile
         run: |
           set -euo pipefail
           export ARCH=arm64
@@ -63,8 +63,12 @@ jobs:
             --disable KSU_MANUAL_HOOK \
             --disable KSU_TRACEPOINT_HOOK
           make O=out olddefconfig
-          grep -E '^(CONFIG_KSU=|CONFIG_KSU_SUSFS|CONFIG_KSU_MANUAL_HOOK|CONFIG_KSU_TRACEPOINT_HOOK|# CONFIG_KSU_)' out/.config | tee artifacts/kernel-config-check.txt
-          grep -q '^CONFIG_KSU=y
+          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_MANUAL_HOOK|CONFIG_KSU_TRACEPOINT_HOOK" out/.config | tee artifacts/kernel-config-check.txt || true
+          grep -q "CONFIG_KSU=y" out/.config
+          ! grep -q "CONFIG_KSU_SUSFS=y" out/.config
+          ! grep -q "CONFIG_KSU_MANUAL_HOOK=y" out/.config
+          ! grep -q "CONFIG_KSU_TRACEPOINT_HOOK=y" out/.config
+          grep "CONFIG_KSU=" out/.config | tee artifacts/candidate-config.txt
 
       - name: Build candidate kernel
         run: |
@@ -82,16 +86,12 @@ jobs:
           nm out/vmlinux | grep -E 'ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
           cp bakasu-source-commit.txt artifacts/
           {
-            echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
+            echo '## Deen BakaSU-only GCC 4.9 control build'
             echo
-            echo 'Diagnostic control profile: base Deen kernel + BakaSU, compiled with GCC 4.9. No SUSFS patches are applied. This isolates the additional root/SUSFS changes; build success is not device boot/runtime validation.'
-            echo
-            cat artifacts/patch-status.txt
-            echo
-            cat artifacts/deferred-feature-contract.txt
+            echo 'Diagnostic profile: Deen base kernel plus BakaSU, compiled with GCC 4.9; SUSFS patches are not applied. Build success does not prove device boot/runtime compatibility.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Package experimental TWRP flashable ZIP (BakaSU-only control)
+      - name: Package experimental TWRP flashable ZIP
         run: |
           set -euo pipefail
           AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
@@ -99,9 +99,9 @@ jobs:
           git -C anykernel checkout --detach "$AK3_COMMIT"
           cp artifacts/kernel/Image.gz-dtb anykernel/Image.gz-dtb
           cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 experimental kernel package
+          ### Deen XT1941-3 BakaSU-only control kernel
           properties() { '
-          kernel.string=Deen BakaSU-only GCC 4.9 control (SUSFS disabled; experimental)
+          kernel.string=Deen BakaSU-only GCC 4.9 control (experimental; no SUSFS)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -122,343 +122,10 @@ jobs:
           write_boot
           AK3
           cat > anykernel/BAKASU-ONLY-CONTROL.txt <<'NOTE'
-          GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
+          GCC 4.9 CONTROL BUILD — BAKASU ONLY; NO SUSFS PATCHES
           Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
-          This package uses the successfully compiled candidate kernel only.
-          Diagnostic control build: base Deen kernel plus BakaSU, using GCC 4.9. No SUSFS patches/features are included; this is not the final SUSFS package.
-          Successful compilation does not prove boot/runtime compatibility.
-          Keep a known-good boot image and recovery access before testing.
-          NOTE
-          cd anykernel
-          zip -qr9 ../artifacts/deen-bakasu-gcc49-control-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
-          cd ..
-          sha256sum artifacts/deen-bakasu-gcc49-control-twrp.zip | tee artifacts/flashable-zip-sha256.txt
-          unzip -t artifacts/deen-bakasu-gcc49-control-twrp.zip
-          test -s artifacts/deen-bakasu-gcc49-control-twrp.zip
-
-      - name: Upload candidate and diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-bakasu-gcc49-control
-          path: |
-            artifacts/
-            bakasu-source-commit.txt
-          if-no-files-found: warn
-          retention-days: 14
- out/.config
-          ! grep -q '^CONFIG_KSU_SUSFS[^=]*=y
-
-      - name: Build candidate kernel
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          export CROSS_COMPILE=aarch64-linux-android-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q 'ksu_handle_sys_reboot'
-          mkdir -p artifacts/kernel
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/kernel/
-          cp out/.config artifacts/kernel.config
-          nm out/vmlinux | grep -E 'ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
-          cp bakasu-source-commit.txt artifacts/
-          {
-            echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
-            echo
-            echo 'Diagnostic control profile: base Deen kernel + BakaSU, compiled with GCC 4.9. No SUSFS patches are applied. This isolates the additional root/SUSFS changes; build success is not device boot/runtime validation.'
-            echo
-            cat artifacts/patch-status.txt
-            echo
-            cat artifacts/deferred-feature-contract.txt
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Package experimental TWRP flashable ZIP (BakaSU-only control)
-        run: |
-          set -euo pipefail
-          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
-          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
-          git -C anykernel checkout --detach "$AK3_COMMIT"
-          cp artifacts/kernel/Image.gz-dtb anykernel/Image.gz-dtb
-          cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 experimental kernel package
-          properties() { '
-          kernel.string=Deen BakaSU-only GCC 4.9 control (SUSFS disabled; experimental)
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=deen
-          device.name2=XT1941-3
-          supported.versions=
-          supported.patchlevels=
-          supported.vendorpatchlevels=
-          '; }
-          BLOCK=/dev/block/bootdevice/by-name/boot
-          IS_SLOT_DEVICE=1
-          RAMDISK_COMPRESSION=auto
-          PATCH_VBMETA_FLAG=auto
-          . tools/ak3-core.sh
-          dump_boot
-          write_boot
-          AK3
-          cat > anykernel/BAKASU-ONLY-CONTROL.txt <<'NOTE'
-          GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
-          Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
-          This package uses the successfully compiled candidate kernel only.
-          Diagnostic control build: base Deen kernel plus BakaSU, using GCC 4.9. No SUSFS patches/features are included; this is not the final SUSFS package.
-          Successful compilation does not prove boot/runtime compatibility.
-          Keep a known-good boot image and recovery access before testing.
-          NOTE
-          cd anykernel
-          zip -qr9 ../artifacts/deen-bakasu-gcc49-control-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
-          cd ..
-          sha256sum artifacts/deen-bakasu-gcc49-control-twrp.zip | tee artifacts/flashable-zip-sha256.txt
-          unzip -t artifacts/deen-bakasu-gcc49-control-twrp.zip
-          test -s artifacts/deen-bakasu-gcc49-control-twrp.zip
-
-      - name: Upload candidate and diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-bakasu-gcc49-control
-          path: |
-            artifacts/
-            bakasu-source-commit.txt
-          if-no-files-found: warn
-          retention-days: 14
- out/.config
-          ! grep -q '^CONFIG_KSU_MANUAL_HOOK=y
-
-      - name: Build candidate kernel
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          export CROSS_COMPILE=aarch64-linux-android-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q 'ksu_handle_sys_reboot'
-          mkdir -p artifacts/kernel
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/kernel/
-          cp out/.config artifacts/kernel.config
-          nm out/vmlinux | grep -E 'ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
-          cp bakasu-source-commit.txt artifacts/
-          {
-            echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
-            echo
-            echo 'Diagnostic control profile: base Deen kernel + BakaSU, compiled with GCC 4.9. No SUSFS patches are applied. This isolates the additional root/SUSFS changes; build success is not device boot/runtime validation.'
-            echo
-            cat artifacts/patch-status.txt
-            echo
-            cat artifacts/deferred-feature-contract.txt
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Package experimental TWRP flashable ZIP (BakaSU-only control)
-        run: |
-          set -euo pipefail
-          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
-          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
-          git -C anykernel checkout --detach "$AK3_COMMIT"
-          cp artifacts/kernel/Image.gz-dtb anykernel/Image.gz-dtb
-          cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 experimental kernel package
-          properties() { '
-          kernel.string=Deen BakaSU-only GCC 4.9 control (SUSFS disabled; experimental)
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=deen
-          device.name2=XT1941-3
-          supported.versions=
-          supported.patchlevels=
-          supported.vendorpatchlevels=
-          '; }
-          BLOCK=/dev/block/bootdevice/by-name/boot
-          IS_SLOT_DEVICE=1
-          RAMDISK_COMPRESSION=auto
-          PATCH_VBMETA_FLAG=auto
-          . tools/ak3-core.sh
-          dump_boot
-          write_boot
-          AK3
-          cat > anykernel/BAKASU-ONLY-CONTROL.txt <<'NOTE'
-          GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
-          Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
-          This package uses the successfully compiled candidate kernel only.
-          Diagnostic control build: base Deen kernel plus BakaSU, using GCC 4.9. No SUSFS patches/features are included; this is not the final SUSFS package.
-          Successful compilation does not prove boot/runtime compatibility.
-          Keep a known-good boot image and recovery access before testing.
-          NOTE
-          cd anykernel
-          zip -qr9 ../artifacts/deen-bakasu-gcc49-control-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
-          cd ..
-          sha256sum artifacts/deen-bakasu-gcc49-control-twrp.zip | tee artifacts/flashable-zip-sha256.txt
-          unzip -t artifacts/deen-bakasu-gcc49-control-twrp.zip
-          test -s artifacts/deen-bakasu-gcc49-control-twrp.zip
-
-      - name: Upload candidate and diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-bakasu-gcc49-control
-          path: |
-            artifacts/
-            bakasu-source-commit.txt
-          if-no-files-found: warn
-          retention-days: 14
- out/.config
-          ! grep -q '^CONFIG_KSU_TRACEPOINT_HOOK=y
-
-      - name: Build candidate kernel
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          export CROSS_COMPILE=aarch64-linux-android-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q 'ksu_handle_sys_reboot'
-          mkdir -p artifacts/kernel
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/kernel/
-          cp out/.config artifacts/kernel.config
-          nm out/vmlinux | grep -E 'ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
-          cp bakasu-source-commit.txt artifacts/
-          {
-            echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
-            echo
-            echo 'Diagnostic control profile: base Deen kernel + BakaSU, compiled with GCC 4.9. No SUSFS patches are applied. This isolates the additional root/SUSFS changes; build success is not device boot/runtime validation.'
-            echo
-            cat artifacts/patch-status.txt
-            echo
-            cat artifacts/deferred-feature-contract.txt
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Package experimental TWRP flashable ZIP (BakaSU-only control)
-        run: |
-          set -euo pipefail
-          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
-          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
-          git -C anykernel checkout --detach "$AK3_COMMIT"
-          cp artifacts/kernel/Image.gz-dtb anykernel/Image.gz-dtb
-          cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 experimental kernel package
-          properties() { '
-          kernel.string=Deen BakaSU-only GCC 4.9 control (SUSFS disabled; experimental)
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=deen
-          device.name2=XT1941-3
-          supported.versions=
-          supported.patchlevels=
-          supported.vendorpatchlevels=
-          '; }
-          BLOCK=/dev/block/bootdevice/by-name/boot
-          IS_SLOT_DEVICE=1
-          RAMDISK_COMPRESSION=auto
-          PATCH_VBMETA_FLAG=auto
-          . tools/ak3-core.sh
-          dump_boot
-          write_boot
-          AK3
-          cat > anykernel/BAKASU-ONLY-CONTROL.txt <<'NOTE'
-          GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
-          Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
-          This package uses the successfully compiled candidate kernel only.
-          Diagnostic control build: base Deen kernel plus BakaSU, using GCC 4.9. No SUSFS patches/features are included; this is not the final SUSFS package.
-          Successful compilation does not prove boot/runtime compatibility.
-          Keep a known-good boot image and recovery access before testing.
-          NOTE
-          cd anykernel
-          zip -qr9 ../artifacts/deen-bakasu-gcc49-control-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
-          cd ..
-          sha256sum artifacts/deen-bakasu-gcc49-control-twrp.zip | tee artifacts/flashable-zip-sha256.txt
-          unzip -t artifacts/deen-bakasu-gcc49-control-twrp.zip
-          test -s artifacts/deen-bakasu-gcc49-control-twrp.zip
-
-      - name: Upload candidate and diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-bakasu-gcc49-control
-          path: |
-            artifacts/
-            bakasu-source-commit.txt
-          if-no-files-found: warn
-          retention-days: 14
- out/.config
-          grep -E '^CONFIG_KSU=' out/.config | tee artifacts/candidate-config.txt
-
-      - name: Build candidate kernel
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          export CROSS_COMPILE=aarch64-linux-android-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q 'ksu_handle_sys_reboot'
-          mkdir -p artifacts/kernel
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/kernel/
-          cp out/.config artifacts/kernel.config
-          nm out/vmlinux | grep -E 'ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
-          cp bakasu-source-commit.txt artifacts/
-          {
-            echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
-            echo
-            echo 'Diagnostic control profile: base Deen kernel + BakaSU, compiled with GCC 4.9. No SUSFS patches are applied. This isolates the additional root/SUSFS changes; build success is not device boot/runtime validation.'
-            echo
-            cat artifacts/patch-status.txt
-            echo
-            cat artifacts/deferred-feature-contract.txt
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Package experimental TWRP flashable ZIP (BakaSU-only control)
-        run: |
-          set -euo pipefail
-          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
-          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
-          git -C anykernel checkout --detach "$AK3_COMMIT"
-          cp artifacts/kernel/Image.gz-dtb anykernel/Image.gz-dtb
-          cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 experimental kernel package
-          properties() { '
-          kernel.string=Deen BakaSU-only GCC 4.9 control (SUSFS disabled; experimental)
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=1
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=deen
-          device.name2=XT1941-3
-          supported.versions=
-          supported.patchlevels=
-          supported.vendorpatchlevels=
-          '; }
-          BLOCK=/dev/block/bootdevice/by-name/boot
-          IS_SLOT_DEVICE=1
-          RAMDISK_COMPRESSION=auto
-          PATCH_VBMETA_FLAG=auto
-          . tools/ak3-core.sh
-          dump_boot
-          write_boot
-          AK3
-          cat > anykernel/BAKASU-ONLY-CONTROL.txt <<'NOTE'
-          GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
-          Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
-          This package uses the successfully compiled candidate kernel only.
-          Diagnostic control build: base Deen kernel plus BakaSU, using GCC 4.9. No SUSFS patches/features are included; this is not the final SUSFS package.
-          Successful compilation does not prove boot/runtime compatibility.
+          This is a diagnostic control kernel based on the Deen tree plus BakaSU. SUSFS patches are not applied.
+          Successful compilation and ZIP integrity do not prove device boot/runtime compatibility.
           Keep a known-good boot image and recovery access before testing.
           NOTE
           cd anykernel
