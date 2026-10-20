@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio patch
+          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio patch zip
 
       - name: Integrate pinned BakaSU source
         run: |
@@ -124,6 +124,51 @@ jobs:
             echo
             cat artifacts/deferred-feature-contract.txt
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package experimental TWRP flashable ZIP (partial SUSFS profile)
+        run: |
+          set -euo pipefail
+          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
+          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
+          git -C anykernel checkout --detach "$AK3_COMMIT"
+          cp artifacts/kernel/Image.gz-dtb anykernel/Image.gz-dtb
+          cat > anykernel/anykernel.sh <<'AK3'
+          ### Deen XT1941-3 experimental kernel package
+          properties() { '
+          kernel.string=Deen BakaSU + SUSFS v2.2 partial candidate (experimental)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=deen
+          device.name2=XT1941-3
+          supported.versions=
+          supported.patchlevels=
+          supported.vendorpatchlevels=
+          '; }
+          BLOCK=/dev/block/bootdevice/by-name/boot
+          IS_SLOT_DEVICE=1
+          RAMDISK_COMPRESSION=auto
+          PATCH_VBMETA_FLAG=auto
+          . tools/ak3-core.sh
+          dump_boot
+          write_boot
+          AK3
+          cat > anykernel/NOT-FULL-SUSFS.txt <<'NOTE'
+          EXPERIMENTAL — NOT FULL SUSFS v2.2 FEATURE PARITY
+          Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
+          This package uses the successfully compiled candidate kernel only.
+          SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP are disabled.
+          Successful compilation does not prove boot/runtime compatibility.
+          Keep a known-good boot image and recovery access before testing.
+          NOTE
+          cd anykernel
+          zip -qr9 ../artifacts/deen-bakasu-susfs22-partial-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          cd ..
+          sha256sum artifacts/deen-bakasu-susfs22-partial-twrp.zip | tee artifacts/flashable-zip-sha256.txt
+          unzip -t artifacts/deen-bakasu-susfs22-partial-twrp.zip
+          test -s artifacts/deen-bakasu-susfs22-partial-twrp.zip
 
       - name: Upload candidate and diagnostics
         if: always()
