@@ -77,3 +77,26 @@ Each feature must be gated by its own Kconfig symbol and tested separately. Avoi
 - Automated symbol/config audit passes; artifact contains kernel image and recorded config/commits/checksums.
 - Image is structurally checked against the supplied Deen boot image layout.
 - Device-side backup and recovery plan exists before any test flash. The baseline artifact must not be substituted for the final image.
+
+## Confirmed hard blocker (2026-10-20)
+
+The pinned BakaSU revision itself contains `kernel/tools/susfs_compat.mk` with an unconditional `$(error Please wait susfs update.)`. This is not merely a missing patch file: selecting BakaSU's `CONFIG_KSU_SUSFS` causes the SUSFS compatibility make fragment to stop the build until its SUSFS integration is updated. The same guard is present in BakaSU's current `main` at the time of this audit.
+
+Upstream BakaSU build documentation also says SUSFS is no longer supported as a ready-made Non-GKI integration and requires manually backporting the patches from a matching `gki-android12-5.10` branch. The SUSFS 2.3 port pinned above explicitly targets Linux 4.9; its documented compatibility starts at kernel 4.9, not 3.18. ReSukiSU documentation has the same limitation: SUSFS backports are for kernel 4.3+, although its manual root hooks can work on older kernels.
+
+Sources checked:
+- BakaSU integration guide: https://bakasu.org/guide/build
+- Pinned BakaSU compatibility guard: https://github.com/Baka-SU/BakaSU/blob/7c383cfeef3a2ac450f2f1273dae74bd50356d31/kernel/tools/susfs_compat.mk
+- SUSFS 2.3 Linux 4.9 port: https://github.com/wxx9248/susfs4ksu
+- ReSukiSU integration guide: https://resukisu.org/guide/build.html
+
+### Decision
+
+Do not enable `CONFIG_KSU_SUSFS` in the current BakaSU baseline and do not package the partial 3.18 patch experiment as a usable kernel. There is no verified maintained SUSFS 2.3 patch for Linux 3.18 in the pinned sources.
+
+The valid next paths are:
+1. Keep the known-buildable BakaSU manual-hook kernel and leave SUSFS disabled; or
+2. Treat SUSFS as a separate, substantial kernel-port project: select a SUSFS/KSU source pair that does not hard-stop its build, port the kernel-side code from a compatible newer branch to Linux 3.18 VFS/SELinux APIs, then require a clean compile, symbol/config audit, boot-image layout validation, and device testing before packaging.
+
+Switching to ReSukiSU alone does not solve the SUSFS problem: its published compatibility guidance still places the SUSFS backport floor above Linux 3.18. No flashable SUSFS ZIP should be produced until path 2 passes every gate above.
+
