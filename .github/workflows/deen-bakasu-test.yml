@@ -158,24 +158,6 @@ jobs:
 
           retry:""", "stat")
 
-          patch_once("fs/read_write.c",
-          """\tif (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
-          \t\treturn -EFAULT;
-
-          \tret = rw_verify_area(READ, file, pos, count);""",
-          """\tif (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
-          \t\treturn -EFAULT;
-
-          #ifdef CONFIG_KSU_MANUAL_HOOK
-          \t{
-          \t\textern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
-          \t\t\t\t\t\tsize_t *count_ptr, loff_t **pos);
-          \t\tksu_handle_vfs_read(&file, &buf, &count, &pos);
-          \t}
-          #endif
-
-          \tret = rw_verify_area(READ, file, pos, count);""", "vfs_read")
-
           patch_once("kernel/reboot.c",
           """\tchar buffer[256];
           \tint ret = 0;
@@ -250,7 +232,6 @@ jobs:
           grep -q 'ksu_handle_stat' fs/stat.c
           grep -q 'ksu_handle_newfstat_ret' fs/stat.c
           grep -q 'ksu_handle_fstat64_ret' fs/stat.c
-          grep -q 'ksu_handle_vfs_read' fs/read_write.c
           grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
 
       - name: Configure manual hook and verify config
