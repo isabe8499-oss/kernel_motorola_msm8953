@@ -103,6 +103,67 @@ for fn in ("ksu_handle_faccessat", "ksu_handle_stat"):
     source_text = source_text.replace(marker, replacement, 1)
 bakasu_source.write_text(source_text)
 
+# The pinned 2026 BakaSU tree expects the newer SUSFS no_su API, which is
+# absent from the legacy v2.2/4.4 patch. Backport the API using ARM64 thread flags.
+# TIF 62 is the spare non-privilege flag used by BakaSU's own manual-hook path;
+# TIF 32 records the zygote-next marker (the legacy SUSFS core has no consumer).
+def_path = root / "include/linux/susfs_def.h"
+def_text = def_path.read_text()
+api_block = """
+#include <linux/sched.h>
+#include <linux/thread_info.h>
+#ifndef TIF_PROC_NON_PRIVILEGE
+#define TIF_PROC_NON_PRIVILEGE 62
+#endif
+#ifndef TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT
+#define TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 32
+#endif
+static inline bool susfs_is_current_proc_no_su(void)
+{
+    return test_thread_flag(TIF_PROC_NON_PRIVILEGE);
+}
+static inline void susfs_set_current_proc_no_su(void)
+{
+    set_thread_flag(TIF_PROC_NON_PRIVILEGE);
+}
+static inline void susfs_clear_current_proc_no_su(void)
+{
+    clear_thread_flag(TIF_PROC_NON_PRIVILEGE);
+}
+static inline void susfs_set_current_proc_umounted_for_zygote_next(void)
+{
+    set_thread_flag(TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);
+}
+"""
+if "static inline bool susfs_is_current_proc_no_su(void)" not in def_text:
+    final_guard = "#endif // #ifndef KSU_SUSFS_DEF_H"
+    if def_text.count(final_guard) != 1:
+        raise SystemExit("SUSFS header final guard not unique; refusing to add legacy no_su API")
+    def_text = def_text.replace(final_guard, api_block + "\n" + final_guard, 1)
+    def_path.write_text(def_text)
+
+# The generic legacy inline-hook script injects ksu_bprm_check(), which this
+# pinned BakaSU revision does not implement. BakaSU's own hook set handles its
+# exec/credential path; remove only that stale declaration and call.
+security_path = root / "security/security.c"
+security_text = security_path.read_text()
+security_text, call_count = re.subn(
+    r"(?m)^\s*#ifdef CONFIG_KSU\n\s*ksu_bprm_check\(bprm\);\n\s*#endif\n",
+    "",
+    security_text,
+)
+security_text, decl_count = re.subn(
+    r"(?m)^\s*extern int ksu_bprm_check\(struct linux_binprm \*bprm\);\n",
+    "",
+    security_text,
+)
+if call_count > 1 or decl_count > 1:
+    raise SystemExit("Unexpected duplicate ksu_bprm_check hook; refusing unsafe removal")
+if call_count == 0:
+    if "ksu_bprm_check(bprm);" in security_text:
+        raise SystemExit("Unrecognized ksu_bprm_check call remains in security.c")
+security_path.write_text(security_text)
+
 # On 3.18 BakaSU intentionally uses a bool for ksu_su_compat_enabled. The
 # SUSFS-specific handlers in this revision assume a modern static key, so gate
 # those two checks on the same compatibility macro used by the rest of BakaSU.
