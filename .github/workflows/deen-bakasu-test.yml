@@ -1,0 +1,74 @@
+name: Deen BakaSU manual-hook test (Linux 3.18)
+
+on:
+  push:
+    branches:
+      - deen-bakasu-manual-hook-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-bakasu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio
+
+      - name: Integrate BakaSU source
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          git -C KernelSU rev-parse HEAD | tee bakasu-source-commit.txt
+
+      - name: Configure manual hook and verify config
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out deen_defconfig
+          grep -q 'config KSU_MANUAL_HOOK' drivers/kernelsu/Kconfig
+          scripts/config --file out/.config --enable KSU --enable KSU_MANUAL_HOOK
+          make O=out olddefconfig
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK)=' out/.config
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+
+      - name: Build BakaSU test kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz dtbs
+          test -s out/arch/arm64/boot/Image.gz
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz artifacts/
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## BakaSU manual-hook test'
+            echo 'Build completed with CONFIG_KSU=y and CONFIG_KSU_MANUAL_HOOK=y.'
+            echo 'This verifies compilation only; device boot/runtime validation is still required.'
+            echo 'SUSFS is deliberately not enabled: upstream BakaSU documents SUSFS backports for kernel 4.3+, while this target is Linux 3.18.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload BakaSU test artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-manual-hook-test
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
