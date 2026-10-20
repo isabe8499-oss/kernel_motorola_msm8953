@@ -84,11 +84,11 @@ jobs:
             --enable KSU_SUSFS \
             --disable KSU_MANUAL_HOOK \
             --disable KSU_TRACEPOINT_HOOK \
-            --disable KSU_SUSFS_SUS_PATH \
-            --disable KSU_SUSFS_SUS_MOUNT \
-            --disable KSU_SUSFS_SUS_KSTAT \
+            --enable KSU_SUSFS_SUS_PATH \
+            --enable KSU_SUSFS_SUS_MOUNT \
+            --enable KSU_SUSFS_SUS_KSTAT \
             --disable KSU_SUSFS_OPEN_REDIRECT \
-            --disable KSU_SUSFS_SUS_MAP \
+            --enable KSU_SUSFS_SUS_MAP \
             --enable KSU_SUSFS_SPOOF_UNAME \
             --enable KSU_SUSFS_ENABLE_LOG \
             --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
@@ -96,9 +96,14 @@ jobs:
           make O=out olddefconfig
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set
+          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
+          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          grep -E '^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_SUSFS_SPOOF_UNAME|CONFIG_KSU_SUSFS_ENABLE_LOG|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG)=' out/.config | tee artifacts/candidate-config.txt
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_SUSFS_SUS_PATH|CONFIG_KSU_SUSFS_SUS_MOUNT|CONFIG_KSU_SUSFS_SUS_KSTAT|CONFIG_KSU_SUSFS_SUS_MAP|CONFIG_KSU_SUSFS_SPOOF_UNAME|CONFIG_KSU_SUSFS_ENABLE_LOG|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG)=' out/.config | tee artifacts/candidate-config.txt
 
       - name: Build candidate kernel
         run: |
