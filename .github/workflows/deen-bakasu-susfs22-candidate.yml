@@ -272,35 +272,24 @@ jobs:
           cat artifacts/deferred-feature-contract.txt
           git diff --check
 
-      - name: Keep BakaSU reboot driver-discovery path compatible with SUSFS mode
+      - name: Preserve existing BakaSU hooks and audit SUSFS driver discovery
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p = Path("kernel/reboot.c")
-          s = p.read_text()
-          # Locate the actual reboot handler and report its surrounding preprocessor
-          # guard instead of injecting a second call or depending on whitespace.
-          pat = re.compile(r"(?s)(#(?:if|ifdef|ifndef).*?\n).*?ksu_handle_sys_reboot\s*\(", re.M)
-          matches = list(pat.finditer(s))
-          if not matches:
-              raise SystemExit("No BakaSU ksu_handle_sys_reboot() call exists after SUSFS adapter")
-          # The hook source in this tree is already adapted by the legacy-hook
-          # integration. Keep that exact source intact and write an audit record.
-          call = matches[-1]
-          Path("artifacts").mkdir(exist_ok=True)
-          Path("artifacts/reboot-hook-context.txt").write_text(s[max(0, call.start()-500):call.end()+500])
-          if s.count("ksu_handle_sys_reboot") < 1:
-              raise SystemExit("BakaSU reboot handler missing")
-          print("BakaSU reboot handler located; preserved without brittle textual rewrite.")
-          PY
+          mkdir -p artifacts
+          grep -n -B 12 -A 12 'ksu_handle_sys_reboot' kernel/reboot.c | tee artifacts/reboot-hook-check.txt || true
+          grep -R -n 'ksu_handle_sys_reboot' drivers/kernelsu kernel/reboot.c | tee artifacts/reboot-driver-discovery.txt || true
+          if ! grep -R -q 'ksu_handle_sys_reboot' kernel/reboot.c drivers/kernelsu; then
+            echo 'No BakaSU reboot-discovery call present in this source integration.' | tee artifacts/reboot-hook-warning.txt
+          fi
 
-      - name: Validate SUSFS reboot hook remains available
+      - name: Validate legacy BakaSU hooks and record reboot discovery audit
         run: |
           set -euo pipefail
-          grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
           grep -n -B 8 -A 8 'ksu_handle_sys_reboot' kernel/reboot.c | tee artifacts/reboot-hook-check.txt
+          test -s artifacts/reboot-hook-check.txt
 
       - name: Configure SUSFS stage-1 inline-hook profile
         run: |
