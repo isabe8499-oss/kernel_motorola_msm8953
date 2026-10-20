@@ -177,10 +177,12 @@ jobs:
           \tret = rw_verify_area(READ, file, pos, count);""", "vfs_read")
 
           patch_once("kernel/reboot.c",
-          """\tint ret = 0;
+          """\tchar buffer[256];
+          \tint ret = 0;
 
-          \t/* We only trust the superuser with this function. */""",
-          """\tint ret = 0;
+          \t/* We only trust the superuser with rebooting the system. */""",
+          """\tchar buffer[256];
+          \tint ret = 0;
 
           #ifdef CONFIG_KSU_MANUAL_HOOK
           \t{
@@ -190,7 +192,7 @@ jobs:
           \t}
           #endif
 
-          \t/* We only trust the superuser with this function. */""", "sys_reboot")
+          \t/* We only trust the superuser with rebooting the system. */""", "sys_reboot")
           PY
           grep -q 'ksu_handle_faccessat' fs/open.c
           grep -q 'ksu_handle_stat' fs/stat.c
