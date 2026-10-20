@@ -100,6 +100,31 @@ open_source = open_source[:guard_pos] + open_source[guard_pos:guard_end].replace
 ) + open_source[guard_end:]
 open_path.write_text(open_source)
 
+# The same inline-hook script injects a newer-kernel filename_lookup()/getname_flags()
+# path into vfs_fstatat(). Linux 3.18's original user_path_at() implementation must
+# remain the active path while SUS_PATH is disabled in this bounded candidate.
+stat_path = root / "fs/stat.c"
+stat_source = stat_path.read_text()
+stat_token = "fname = getname_flags(filename, lookup_flags, NULL);"
+if stat_source.count(stat_token) != 1:
+    raise SystemExit("Expected exactly one SUSFS legacy vfs_fstatat injected block; refusing compatibility edit")
+stat_token_pos = stat_source.index(stat_token)
+stat_guard_pos = stat_source.rfind("#ifdef CONFIG_KSU_SUSFS", 0, stat_token_pos)
+if stat_guard_pos < 0:
+    raise SystemExit("Could not find the SUSFS guard for the injected vfs_fstatat block")
+stat_guard_end = stat_guard_pos + len("#ifdef CONFIG_KSU_SUSFS")
+stat_between = stat_source[stat_guard_end:stat_token_pos]
+if stat_between.count("\\n") > 4 or stat_between.strip():
+    raise SystemExit("The vfs_fstatat SUSFS guard is not immediately associated with getname_flags; refusing compatibility edit")
+stat_source = (
+    stat_source[:stat_guard_pos]
+    + stat_source[stat_guard_pos:stat_guard_end].replace(
+        "#ifdef CONFIG_KSU_SUSFS", "#ifdef CONFIG_KSU_SUSFS_SUS_PATH", 1
+    )
+    + stat_source[stat_guard_end:]
+)
+stat_path.write_text(stat_source)
+
 # Backport the SUSFS patch set's newer header and static-key API to Linux 3.18.
 defs = root / "include/linux/susfs_def.h"
 defs_source = defs.read_text()
