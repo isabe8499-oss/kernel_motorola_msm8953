@@ -130,9 +130,10 @@ compat_mk.write_text(compat_text.replace(stop_line + "\n", "", 1))
 # Backport the SUSFS patch set's newer header and static-key API to Linux 3.18.
 defs = root / "include/linux/susfs_def.h"
 defs_source = defs.read_text()
-if defs_source.count("#include <linux/bits.h>") != 1:
-    raise SystemExit("Expected linux/bits.h include not found exactly once; review SUSFS header version")
-defs.write_text(defs_source.replace("#include <linux/bits.h>", "#include <linux/bitops.h>", 1))
+if defs_source.count("#include <linux/bits.h>") == 1:
+    defs.write_text(defs_source.replace("#include <linux/bits.h>", "#include <linux/bitops.h>", 1))
+elif "#include <linux/bitops.h>" not in defs_source:
+    raise SystemExit("SUSFS header has neither linux/bits.h nor linux/bitops.h; review header API")
 
 static_key_paths = [
     "fs/susfs.c",
