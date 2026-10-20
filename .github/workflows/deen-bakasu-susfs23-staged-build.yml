@@ -1,0 +1,290 @@
+name: Deen Deen staged build - BakaSU baseline + SUSFS 2.3 gate
+
+on:
+  push:
+    branches:
+      - deen-bakasu-susfs23-port-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-bakasu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio
+
+      - name: Integrate BakaSU source
+        run: |
+          set -euo pipefail
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh "${BAKASU_COMMIT}"
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
+          echo "${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
+          test "${ACTUAL_COMMIT}" = "${BAKASU_COMMIT}"
+
+      - name: Integrate legacy execve hooks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("fs/exec.c")
+          s = p.read_text()
+
+          marker = """static int do_execve_common(struct filename *filename,
+          				struct user_arg_ptr argv,
+          				struct user_arg_ptr envp)
+          {"""
+          replacement = """#ifdef CONFIG_KSU_MANUAL_HOOK
+          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
+          				void *argv, void *envp, int *flags);
+          extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
+          				void *argv, void *envp, int *flags, int *retval);
+          #endif
+
+          static int do_execve_common(struct filename *filename,
+          				struct user_arg_ptr argv,
+          				struct user_arg_ptr envp)
+          {"""
+          assert s.count(marker) == 1, "do_execve_common marker not unique; refusing unsafe patch"
+          s = s.replace(marker, replacement, 1)
+
+          old_vars = """	int retval;
+          	bool is_su;
+
+          	if (IS_ERR(filename))
+          		return PTR_ERR(filename);"""
+          new_vars = """	int retval;
+          	bool is_su;
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	int ksu_fd = AT_FDCWD;
+          	int ksu_flags = 0;
+          #endif
+
+          	if (IS_ERR(filename))
+          		return PTR_ERR(filename);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags);
+          #endif"""
+          assert s.count(old_vars) == 1, "execve local/guard block not unique; refusing unsafe patch"
+          s = s.replace(old_vars, new_vars, 1)
+
+          success = """	free_bprm(bprm);
+          	putname(filename);
+          	if (displaced)"""
+          success_new = """	free_bprm(bprm);
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+          #endif
+          	putname(filename);
+          	if (displaced)"""
+          assert s.count(success) == 1, "success cleanup marker not unique; refusing unsafe patch"
+          s = s.replace(success, success_new, 1)
+
+          failure = """out_ret:
+          	putname(filename);
+          	return retval;"""
+          failure_new = """out_ret:
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+          #endif
+          	putname(filename);
+          	return retval;"""
+          assert s.count(failure) == 1, "failure cleanup marker not unique; refusing unsafe patch"
+          s = s.replace(failure, failure_new, 1)
+
+          p.write_text(s)
+          print("Patched fs/exec.c: manual execveat pre/post hooks placed while struct filename is still valid.")
+          PY
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_post_execveat' fs/exec.c
+
+      - name: Integrate legacy faccessat/stat/vfs_read/reboot hooks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def patch_once(path, marker, replacement, label):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(marker)
+              if n != 1:
+                  raise SystemExit(f"{label}: expected exactly one marker, found {n}; refusing patch")
+              p.write_text(s.replace(marker, replacement, 1))
+              print(f"patched {path}: {label}")
+
+          patch_once("fs/open.c",
+          """\tunsigned int lookup_flags = LOOKUP_FOLLOW;
+
+          \tif (mode & ~S_IRWXO)""",
+          """\tunsigned int lookup_flags = LOOKUP_FOLLOW;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
+          \t\t\t\t\tint *mode, int *__unused_flags);
+          \t\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          \t}
+          #endif
+
+          \tif (mode & ~S_IRWXO)""", "faccessat")
+
+          patch_once("fs/stat.c",
+          """\tif (flag & AT_EMPTY_PATH)
+          \t\tlookup_flags |= LOOKUP_EMPTY;
+          retry:""",
+          """\tif (flag & AT_EMPTY_PATH)
+          \t\tlookup_flags |= LOOKUP_EMPTY;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+          \t\tksu_handle_stat(&dfd, &filename, &flag);
+          \t}
+          #endif
+
+          retry:""", "stat")
+
+          patch_once("kernel/reboot.c",
+          """\tchar buffer[256];
+          \tint ret = 0;
+
+          \t/* We only trust the superuser with rebooting the system. */""",
+          """\tchar buffer[256];
+          \tint ret = 0;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
+          \t\tif (magic1 == 0xDEADBEEF)
+          \t\t\treturn ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+          \t}
+          #endif
+
+          \t/* We only trust the superuser with rebooting the system. */""", "sys_reboot")
+          # Add BakaSU stat return hooks required by its compile-time checker.
+          patch_once("fs/stat.c",
+          """SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          \treturn error;
+          }""",
+          """SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \textern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
+          \tksu_handle_newfstat_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }""", "newfstat_ret")
+
+          patch_once("fs/stat.c",
+          """SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          \treturn error;
+          }""",
+          """SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \textern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);
+          \tksu_handle_fstat64_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }""", "fstat64_ret")
+          PY
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+          grep -q 'ksu_handle_newfstat_ret' fs/stat.c
+          grep -q 'ksu_handle_fstat64_ret' fs/stat.c
+          grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
+
+      - name: Configure manual hook and verify config
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out deen_defconfig
+          grep -q 'config KSU_MANUAL_HOOK' drivers/kernelsu/Kconfig
+          scripts/config --file out/.config --enable KSU --enable KSU_MANUAL_HOOK \
+            --disable KSU_TRACEPOINT_HOOK \
+            --disable KSU_SUSFS \
+            --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
+          make O=out olddefconfig
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS is not set$' out/.config
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK)=' out/.config
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+
+      - name: Build BakaSU baseline kernel (SUSFS intentionally disabled)
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          test -s out/vmlinux
+          # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
+          nm out/vmlinux | grep -q ksu_handle_sys_reboot
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+          cp out/.config artifacts/kernel.config
+          nm out/vmlinux | grep -E 'ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/bakasu-symbols.txt
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## BakaSU baseline (SUSFS disabled)'
+            echo 'Build completed with KSU_MANUAL_HOOK enabled and KSU_TRACEPOINT_HOOK disabled; the reboot supercall symbol is checked in the linked vmlinux. SUSFS is intentionally disabled in this baseline.'
+            echo 'This verifies config, compilation, and linked symbols only; device boot/runtime validation is still required.'
+            echo 'SUSFS is deliberately disabled. This artifact is NOT the requested BakaSU+SUSFS kernel; it establishes a reproducible BakaSU baseline while SUSFS 2.3 compatibility is being ported. Upstream BakaSU documentation lists SUSFS backports for kernel 4.3+, and this target is Linux 3.18.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload BakaSU test artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-baseline-no-susfs
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
