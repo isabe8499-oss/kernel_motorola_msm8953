@@ -1,0 +1,155 @@
+name: Deen BakaSU + SUSFS v2.3.0 port experiment
+
+on:
+  push:
+    branches:
+      - deen-bakasu-susfs23-port-exp
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-port:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio patch
+
+      - name: Integrate pinned BakaSU source
+        run: |
+          set -euo pipefail
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh "${BAKASU_COMMIT}"
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
+          echo "${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
+          test "${ACTUAL_COMMIT}" = "${BAKASU_COMMIT}"
+
+      - name: Fetch pinned SUSFS v2.3.0 Non-GKI integration sources
+        run: |
+          set -euo pipefail
+          BASE=https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/dcd789634247c77d8549a42aef232c680a905585/Patches
+          curl -fL "${BASE}/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs-core.patch
+          curl -fL "${BASE}/susfs_inline_hook_patches.sh" -o /tmp/susfs-inline-hooks.sh
+          sha256sum /tmp/susfs-core.patch /tmp/susfs-inline-hooks.sh | tee source-sha256.txt
+          grep -q 'SUSFS_VERSION "v2.3.0"' /tmp/susfs-core.patch
+          grep -q 'Tested kernel versions:.*3.18' /tmp/susfs-inline-hooks.sh
+
+      - name: Apply SUSFS core patch to Linux 3.18 and capture rejects
+        id: core
+        shell: bash
+        run: |
+          set -uo pipefail
+          patch -p1 --batch --forward < /tmp/susfs-core.patch 2>&1 | tee susfs-core-apply.log
+          status=${PIPESTATUS[0]}
+          rej_count=$(find . -type f -name '*.rej' | wc -l)
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "reject_count=${rej_count}" >> "$GITHUB_OUTPUT"
+          echo "Patch command status: ${status}; reject files: ${rej_count}"
+          tar -czf susfs-rejects.tar.gz --ignore-failed-read $(find . -type f \( -name '*.rej' -o -name '*.orig' \) -print) 2>/dev/null || true
+          if [ "${status}" -ne 0 ] || [ "${rej_count}" -ne 0 ]; then
+            echo "Core SUSFS port is incomplete on this kernel; deliberately stopping before hooks/build/package."
+            exit 1
+          fi
+          test -f fs/susfs.c
+          test -f include/linux/susfs.h
+          test -f include/linux/susfs_def.h
+          grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
+
+      - name: Upload patch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-susfs23-patch-diagnostics
+          path: |
+            susfs-core-apply.log
+            susfs-rejects.tar.gz
+            source-sha256.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Apply SUSFS v2.3.0 inline hooks
+        if: steps.core.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash /tmp/susfs-inline-hooks.sh
+          # Ensure that the expected inline hook integration actually happened.
+          grep -q 'ksu_handle_execveat_sucompat' fs/exec.c
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+          grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
+          grep -q 'ksu_handle_sys_read' fs/read_write.c
+          grep -q 'susfs_' security/selinux/hooks.c
+          cp /tmp/susfs-inline-hooks.sh susfs-inline-hooks.sh
+
+      - name: Configure BakaSU SUSFS choice and verify effective config
+        if: steps.core.outcome == 'success'
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out deen_defconfig
+          scripts/config --file out/.config --enable KSU --enable KSU_SUSFS \
+            --disable KSU_MANUAL_HOOK --disable KSU_TRACEPOINT_HOOK \
+            --enable KSU_SUSFS_SUS_PATH --enable KSU_SUSFS_SUS_MOUNT \
+            --enable KSU_SUSFS_SUS_KSTAT --enable KSU_SUSFS_SPOOF_UNAME \
+            --enable KSU_SUSFS_ENABLE_LOG --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG --disable KSU_SUSFS_OPEN_REDIRECT \
+            --enable KSU_SUSFS_SUS_MAP
+          make O=out olddefconfig
+          grep -E '^(CONFIG_KSU=|CONFIG_KSU_SUSFS=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_TRACEPOINT_HOOK=|CONFIG_KSU_SUSFS_)' out/.config | tee susfs-effective-config.txt
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y$' out/.config
+
+      - name: Compile Linux 3.18.140 Deen kernel with BakaSU and SUSFS v2.3.0
+        if: steps.core.outcome == 'success'
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          test -s out/vmlinux
+          nm out/vmlinux | grep -q ksu_handle_sys_reboot
+          nm out/vmlinux | grep -q susfs_
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+          cp out/.config artifacts/kernel.config
+          cp susfs-effective-config.txt artifacts/
+          cp susfs-core-apply.log artifacts/
+          cp source-sha256.txt artifacts/
+          nm out/vmlinux | grep -E 'ksu_handle_sys_reboot|ksu_handle_execveat|ksu_install_fd|susfs_' > artifacts/bakasu-susfs-symbols.txt
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## Deen BakaSU + SUSFS v2.3.0 port experiment'
+            echo 'Core SUSFS patch came from a community 4.4 patch and is being tested against this 3.18.140 tree; successful compilation alone does not establish full runtime compatibility.'
+            echo 'SUSFS OPEN_REDIRECT deliberately disabled because the existing Deen 3.18 test notes report a panic in this feature.'
+            echo 'No boot.img or flashable ZIP is produced by this experiment.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build and validation artifacts
+        if: always() && steps.core.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-bakasu-susfs23-port-build
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
