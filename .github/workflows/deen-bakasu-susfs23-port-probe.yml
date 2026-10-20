@@ -30,8 +30,14 @@ jobs:
           BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
           SUSFS_PORT_COMMIT=71345ded5af28f55d76ebcdc7a9df9cea56111e1
           INLINE_HOOK_COMMIT=dcd789634247c77d8549a42aef232c680a905585
-          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
-          sh /tmp/bakasu-setup.sh "${BAKASU_COMMIT}"
+          git init -q KernelSU
+          git -C KernelSU remote add origin https://github.com/Baka-SU/BakaSU.git
+          git -C KernelSU -c protocol.version=2 fetch --depth=1 origin "${BAKASU_COMMIT}"
+          git -C KernelSU checkout --detach -q FETCH_HEAD
+          test "$(git -C KernelSU rev-parse HEAD)" = "${BAKASU_COMMIT}"
+          ln -s ../KernelSU/kernel drivers/kernelsu
+          grep -q 'kernelsu' drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           test -L drivers/kernelsu
           test -f drivers/kernelsu/Kconfig
           git clone https://github.com/wxx9248/susfs4ksu.git /tmp/susfs4ksu
