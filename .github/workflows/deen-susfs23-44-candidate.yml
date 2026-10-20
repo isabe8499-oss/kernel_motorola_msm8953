@@ -28,31 +28,31 @@ jobs:
         run: |
           set -euo pipefail
           BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
-          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
-          sh /tmp/bakasu-setup.sh "${BAKASU_COMMIT}"
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/\${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh "\${BAKASU_COMMIT}"
           test -L drivers/kernelsu
           test -f drivers/kernelsu/Kconfig
           ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
-          echo "${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
-          test "${ACTUAL_COMMIT}" = "${BAKASU_COMMIT}"
+          echo "\${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
+          test "\${ACTUAL_COMMIT}" = "\${BAKASU_COMMIT}"
 
       - name: Download version-pinned SUSFS 2.3 patch set
         run: |
           set -euo pipefail
           BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
           SUSFS_PATCH_COMMIT=dcd789634247c77d8549a42aef232c680a905585
-          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/${SUSFS_PATCH_COMMIT}/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4.patch
-          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/${SUSFS_PATCH_COMMIT}/Patches/susfs_inline_hook_patches.sh" -o susfs_inline_hook_patches.sh
+          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/\${SUSFS_PATCH_COMMIT}/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4.patch
+          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/\${SUSFS_PATCH_COMMIT}/Patches/susfs_inline_hook_patches.sh" -o susfs_inline_hook_patches.sh
           mkdir -p artifacts
           sha256sum /tmp/susfs_patch_to_4.4.patch susfs_inline_hook_patches.sh | tee artifacts/source-sha256.txt
-          printf 'BakaSU=%s\nSUSFS_patch_source=JackA1ltman/NonGKI_Kernel_Build_2nd@%s\nCore_patch=susfs_patch_to_4.4.patch\n' "${BAKASU_COMMIT}" "${SUSFS_PATCH_COMMIT}" | tee artifacts/source-commits.txt
+          printf 'BakaSU=%s\nSUSFS_patch_source=JackA1ltman/NonGKI_Kernel_Build_2nd@%s\nCore_patch=susfs_patch_to_4.4.patch\n' "\${BAKASU_COMMIT}" "\${SUSFS_PATCH_COMMIT}" | tee artifacts/source-commits.txt
 
       - name: Apply SUSFS 2.3 core patch for 4.4 as a compatibility candidate
         run: |
           set +e
           patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4.patch > artifacts/core-patch-4.4.log 2>&1
           rc=$?
-          echo "core_patch_exit=${rc}" | tee artifacts/patch-status.txt
+          echo "core_patch_exit=\${rc}" | tee artifacts/patch-status.txt
           exit 0
 
       - name: Apply SUSFS v2.3 inline hooks for legacy kernel
@@ -60,7 +60,7 @@ jobs:
           set +e
           bash susfs_inline_hook_patches.sh > artifacts/inline-hooks.log 2>&1
           rc=$?
-          echo "inline_hooks_exit=${rc}" | tee -a artifacts/patch-status.txt
+          echo "inline_hooks_exit=\${rc}" | tee -a artifacts/patch-status.txt
           exit 0
 
       - name: Apply bounded SUSFS 2.3 compatibility profile for Linux 3.18
@@ -108,270 +108,11 @@ jobs:
       - name: Verify bounded SUSFS 2.3 port contract
         run: |
           set -euo pipefail
-          grep -q '^inline_hooks_exit=0
-      - name: Configure SUSFS hooking mode and v2.3 features
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out deen_defconfig
-          scripts/config --file out/.config \
-            --enable KSU \
-            --enable KSU_SUSFS \
-            --disable KSU_MANUAL_HOOK \
-            --disable KSU_TRACEPOINT_HOOK \
-            --disable KSU_SUSFS_SUS_PATH \
-            --disable KSU_SUSFS_SUS_MOUNT \
-            --disable KSU_SUSFS_SUS_KSTAT \
-            --enable KSU_SUSFS_SPOOF_UNAME \
-            --enable KSU_SUSFS_ENABLE_LOG \
-            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            --disable KSU_SUSFS_OPEN_REDIRECT \
-            --disable KSU_SUSFS_SUS_MAP
-          make O=out olddefconfig
-          grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
-          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          for symbol in KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
-            grep -q "^CONFIG_${symbol}=y$" out/.config
-          done
-          for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
-            grep -q "^# CONFIG_${symbol} is not set$" out/.config
-          done
-          cp out/.config artifacts/kernel.config
-
-      - name: Compile SUSFS v2.3 candidate (only after strict port gate)
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q susfs_init
-          nm out/vmlinux | grep -q susfs_show_version
-          mkdir -p artifacts/build
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/build/
-          cp out/vmlinux artifacts/build/vmlinux
-          nm out/vmlinux | grep -E 'susfs_|ksu_handle_' > artifacts/build/susfs-bakasu-symbols.txt
-          {
-            echo '## SUSFS candidate build'
-            echo 'The kernel compiled with CONFIG_KSU_SUSFS and all selected v2.3 feature symbols enabled. This establishes compile-time integration only; it is not yet a flash package or device boot validation.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload SUSFS candidate diagnostics and build
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-susfs23-44-candidate
-          path: |
-            artifacts/
-            **/*.rej
-            **/*.orig
-            susfs_inline_hook_patches.sh
-          if-no-files-found: warn
-          retention-days: 14
- artifacts/patch-status.txt
-          grep -q '^compat_profile=partial-susfs23-legacy-kernel
-      - name: Configure SUSFS hooking mode and v2.3 features
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out deen_defconfig
-          scripts/config --file out/.config \
-            --enable KSU \
-            --enable KSU_SUSFS \
-            --disable KSU_MANUAL_HOOK \
-            --disable KSU_TRACEPOINT_HOOK \
-            --enable KSU_SUSFS_SUS_PATH \
-            --enable KSU_SUSFS_SUS_MOUNT \
-            --enable KSU_SUSFS_SUS_KSTAT \
-            --enable KSU_SUSFS_SPOOF_UNAME \
-            --enable KSU_SUSFS_ENABLE_LOG \
-            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            --enable KSU_SUSFS_OPEN_REDIRECT \
-            --enable KSU_SUSFS_SUS_MAP
-          make O=out olddefconfig
-          grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
-          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
-            grep -q "^CONFIG_${symbol}=y$" out/.config
-          done
-          cp out/.config artifacts/kernel.config
-
-      - name: Compile SUSFS v2.3 candidate (only after strict port gate)
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q susfs_init
-          nm out/vmlinux | grep -q susfs_show_version
-          mkdir -p artifacts/build
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/build/
-          cp out/vmlinux artifacts/build/vmlinux
-          nm out/vmlinux | grep -E 'susfs_|ksu_handle_' > artifacts/build/susfs-bakasu-symbols.txt
-          {
-            echo '## SUSFS candidate build'
-            echo 'The kernel compiled with CONFIG_KSU_SUSFS and all selected v2.3 feature symbols enabled. This establishes compile-time integration only; it is not yet a flash package or device boot validation.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload SUSFS candidate diagnostics and build
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-susfs23-44-candidate
-          path: |
-            artifacts/
-            **/*.rej
-            **/*.orig
-            susfs_inline_hook_patches.sh
-          if-no-files-found: warn
-          retention-days: 14
- artifacts/patch-status.txt
-          grep -q '^avc_label_adaptation=applied
-      - name: Configure SUSFS hooking mode and v2.3 features
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out deen_defconfig
-          scripts/config --file out/.config \
-            --enable KSU \
-            --enable KSU_SUSFS \
-            --disable KSU_MANUAL_HOOK \
-            --disable KSU_TRACEPOINT_HOOK \
-            --enable KSU_SUSFS_SUS_PATH \
-            --enable KSU_SUSFS_SUS_MOUNT \
-            --enable KSU_SUSFS_SUS_KSTAT \
-            --enable KSU_SUSFS_SPOOF_UNAME \
-            --enable KSU_SUSFS_ENABLE_LOG \
-            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            --enable KSU_SUSFS_OPEN_REDIRECT \
-            --enable KSU_SUSFS_SUS_MAP
-          make O=out olddefconfig
-          grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
-          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
-            grep -q "^CONFIG_${symbol}=y$" out/.config
-          done
-          cp out/.config artifacts/kernel.config
-
-      - name: Compile SUSFS v2.3 candidate (only after strict port gate)
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q susfs_init
-          nm out/vmlinux | grep -q susfs_show_version
-          mkdir -p artifacts/build
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/build/
-          cp out/vmlinux artifacts/build/vmlinux
-          nm out/vmlinux | grep -E 'susfs_|ksu_handle_' > artifacts/build/susfs-bakasu-symbols.txt
-          {
-            echo '## SUSFS candidate build'
-            echo 'The kernel compiled with CONFIG_KSU_SUSFS and all selected v2.3 feature symbols enabled. This establishes compile-time integration only; it is not yet a flash package or device boot validation.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload SUSFS candidate diagnostics and build
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-susfs23-44-candidate
-          path: |
-            artifacts/
-            **/*.rej
-            **/*.orig
-            susfs_inline_hook_patches.sh
-          if-no-files-found: warn
-          retention-days: 14
- artifacts/patch-status.txt
+          grep -q '^inline_hooks_exit=0$' artifacts/patch-status.txt
+          grep -q '^compat_profile=partial-susfs23-legacy-kernel$' artifacts/patch-status.txt
+          grep -q '^avc_label_adaptation=applied$' artifacts/patch-status.txt
           grep -q 'SUSFS_VERSION "v2.3.0"' include/linux/susfs.h
-          grep -q 'config KSU_SUSFS
-      - name: Configure SUSFS hooking mode and v2.3 features
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out deen_defconfig
-          scripts/config --file out/.config \
-            --enable KSU \
-            --enable KSU_SUSFS \
-            --disable KSU_MANUAL_HOOK \
-            --disable KSU_TRACEPOINT_HOOK \
-            --enable KSU_SUSFS_SUS_PATH \
-            --enable KSU_SUSFS_SUS_MOUNT \
-            --enable KSU_SUSFS_SUS_KSTAT \
-            --enable KSU_SUSFS_SPOOF_UNAME \
-            --enable KSU_SUSFS_ENABLE_LOG \
-            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            --enable KSU_SUSFS_OPEN_REDIRECT \
-            --enable KSU_SUSFS_SUS_MAP
-          make O=out olddefconfig
-          grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
-          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
-            grep -q "^CONFIG_${symbol}=y$" out/.config
-          done
-          cp out/.config artifacts/kernel.config
-
-      - name: Compile SUSFS v2.3 candidate (only after strict port gate)
-        if: success()
-        run: |
-          set -euo pipefail
-          export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out -j"$(nproc)" Image.gz-dtb
-          test -s out/arch/arm64/boot/Image.gz-dtb
-          test -s out/vmlinux
-          nm out/vmlinux | grep -q susfs_init
-          nm out/vmlinux | grep -q susfs_show_version
-          mkdir -p artifacts/build
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/build/
-          cp out/vmlinux artifacts/build/vmlinux
-          nm out/vmlinux | grep -E 'susfs_|ksu_handle_' > artifacts/build/susfs-bakasu-symbols.txt
-          {
-            echo '## SUSFS candidate build'
-            echo 'The kernel compiled with CONFIG_KSU_SUSFS and all selected v2.3 feature symbols enabled. This establishes compile-time integration only; it is not yet a flash package or device boot validation.'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload SUSFS candidate diagnostics and build
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deen-linux-3.18.140-susfs23-44-candidate
-          path: |
-            artifacts/
-            **/*.rej
-            **/*.orig
-            susfs_inline_hook_patches.sh
-          if-no-files-found: warn
-          retention-days: 14
- drivers/kernelsu/Kconfig
+          grep -q 'config KSU_SUSFS$' drivers/kernelsu/Kconfig
           grep -q 'config KSU_SUSFS_SUS_PATH' drivers/kernelsu/Kconfig
           grep -q 'security/selinux/avc.c.rej[[:space:]]MANUALLY_ADAPTED' artifacts/hunk-disposition.tsv
           grep -q 'fs/namei.c.rej[[:space:]]DEFERRED' artifacts/hunk-disposition.tsv
@@ -405,22 +146,25 @@ jobs:
             --enable KSU_SUSFS \
             --disable KSU_MANUAL_HOOK \
             --disable KSU_TRACEPOINT_HOOK \
-            --enable KSU_SUSFS_SUS_PATH \
-            --enable KSU_SUSFS_SUS_MOUNT \
-            --enable KSU_SUSFS_SUS_KSTAT \
+            --disable KSU_SUSFS_SUS_PATH \
+            --disable KSU_SUSFS_SUS_MOUNT \
+            --disable KSU_SUSFS_SUS_KSTAT \
             --enable KSU_SUSFS_SPOOF_UNAME \
             --enable KSU_SUSFS_ENABLE_LOG \
             --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
             --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            --enable KSU_SUSFS_OPEN_REDIRECT \
-            --enable KSU_SUSFS_SUS_MAP
+            --disable KSU_SUSFS_OPEN_REDIRECT \
+            --disable KSU_SUSFS_SUS_MAP
           make O=out olddefconfig
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
-            grep -q "^CONFIG_${symbol}=y$" out/.config
+          for symbol in KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
+            grep -q "^CONFIG_\${symbol}=y$" out/.config
+          done
+          for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
+            grep -q "^# CONFIG_\${symbol} is not set$" out/.config
           done
           cp out/.config artifacts/kernel.config
 
@@ -440,8 +184,8 @@ jobs:
           cp out/vmlinux artifacts/build/vmlinux
           nm out/vmlinux | grep -E 'susfs_|ksu_handle_' > artifacts/build/susfs-bakasu-symbols.txt
           {
-            echo '## SUSFS candidate build'
-            echo 'The kernel compiled with CONFIG_KSU_SUSFS and all selected v2.3 feature symbols enabled. This establishes compile-time integration only; it is not yet a flash package or device boot validation.'
+            echo '## SUSFS partial-profile candidate build'
+            echo 'The kernel compiled with CONFIG_KSU_SUSFS and the bounded feature subset. SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, and SUS_MAP remain disabled; this is not full SUSFS v2.3 parity, not a flash package, and not device boot validation.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload SUSFS candidate diagnostics and build
@@ -451,8 +195,6 @@ jobs:
           name: deen-linux-3.18.140-susfs23-44-candidate
           path: |
             artifacts/
-            **/*.rej
-            **/*.orig
             susfs_inline_hook_patches.sh
           if-no-files-found: warn
           retention-days: 14
