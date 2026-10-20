@@ -1,0 +1,113 @@
+name: Deen BakaSU manual-hook build (Linux 3.18)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - build/deen-bakasu-manual-hook
+    paths:
+      - '.github/workflows/deen-bakasu-build.yml'
+      - 'arch/arm64/configs/deen_defconfig'
+      - 'Makefile'
+      - 'drivers/Kconfig'
+      - 'drivers/Makefile'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deen-bakasu-final-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deen:
+    name: Build BakaSU manual-hook kernel
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ca-certificates             curl flex git libelf-dev libssl-dev python3 python3-pip             unzip zip gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Add pinned BakaSU kernel source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v4.2.0-rc3 https://github.com/Baka-SU/BakaSU.git KernelSU
+          test -s KernelSU/kernel/Kconfig
+          test -s KernelSU/kernel/Makefile
+          grep -Fq 'source "KernelSU/kernel/Kconfig"' drivers/Kconfig ||             printf '\nsource "KernelSU/kernel/Kconfig"\n' >> drivers/Kconfig
+          grep -Fq 'obj-y += KernelSU/kernel/' drivers/Makefile ||             printf '\nobj-y += KernelSU/kernel/\n' >> drivers/Makefile
+
+      - name: Configure Deen with legacy manual hooks
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out deen_defconfig
+          scripts/config --file out/.config --enable KSU
+          scripts/config --file out/.config --enable KSU_MANUAL_HOOK
+          scripts/config --file out/.config --disable KSU_TRACEPOINT_HOOK
+          scripts/config --file out/.config --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK
+          scripts/config --file out/.config --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK
+          scripts/config --file out/.config --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
+          # SUSFS is deliberately not enabled: BakaSU documents its SUSFS backport
+          # support from kernel 4.3+, while this device source is Linux 3.18.140.
+          scripts/config --file out/.config --disable KSU_SUSFS
+          make O=out olddefconfig
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
+          {
+            echo '## Kernel configuration'
+            echo '- Device target: Motorola One (deen)'
+            echo '- Source kernel: Linux 3.18.140 / ARM64'
+            echo '- Root: BakaSU v4.2.0-rc3, legacy manual-hook path enabled'
+            echo '- SUSFS: disabled; upstream BakaSU documents backport support from kernel 4.3+, so 3.18 requires a separate custom port'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz dtbs
+
+      - name: Collect kernel and matching BakaSU manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          test -s out/arch/arm64/boot/Image.gz
+          cp out/arch/arm64/boot/Image.gz artifacts/
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          curl --fail --location --retry 3             'https://github.com/Baka-SU/BakaSU/releases/download/v4.2.0-rc3/ReSukiSU_v4.2.0-rc3_35171-arm64-v8a-release.apk'             --output artifacts/BakaSU-Manager-v4.2.0-rc3-arm64.apk
+          cat > artifacts/BUILD-NOTES.txt <<'EOF'
+          Device: Motorola One (deen)
+          Kernel source: Linux 3.18.140, ARM64, deen_defconfig
+          Root integration: BakaSU v4.2.0-rc3 with manual hooks
+          Manager APK: ReSukiSU/BakaSU v4.2.0-rc3, arm64-v8a
+          SUSFS: not enabled. Upstream BakaSU states SUSFS backport support starts at kernel 4.3; this source is 3.18.140.
+          Flashing: this artifact contains a kernel image and DTB files, not a complete boot.img or recovery-flashable ZIP. Do not flash without packaging for the device/ROM boot layout and keeping a known-good recovery path.
+          EOF
+          {
+            echo '## Output files'
+            find artifacts -maxdepth 1 -type f -printf '- %f (%s bytes)\n' | sort
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload final BakaSU build
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-bakasu-3.18.140-susfs-disabled
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
