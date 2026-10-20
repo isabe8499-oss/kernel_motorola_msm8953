@@ -182,12 +182,27 @@ exec_path.write_text(exec_source)
 # BakaSU currently has a deliberate SUSFS compatibility stop. The isolated
 # candidate removes only that unconditional make-time stop; all compiler and
 # hook checks remain enabled.
-compat_mk = root / "drivers/kernelsu/tools/susfs_compat.mk"
+compat_candidates = [
+    root / "KernelSU/kernel/tools/susfs_compat.mk",
+    root / "drivers/kernelsu/tools/susfs_compat.mk",
+]
+compat_mk = next((p for p in compat_candidates if p.is_file()), None)
+if compat_mk is None:
+    raise SystemExit("BakaSU susfs_compat.mk not found in either checkout or driver symlink")
 compat_text = compat_mk.read_text()
-stop_line = "$(error Please wait susfs update.)"
-if compat_text.count(stop_line) != 1:
-    raise SystemExit("Expected BakaSU SUSFS compatibility stop not found exactly once")
-compat_mk.write_text(compat_text.replace(stop_line + "\n", "", 1))
+# Remove only the explicit make-time stop. Keep the diagnostic info() lines.
+compat_text, removed = re.subn(
+    r"(?m)^\s*\$\(error\s+Please wait susfs update\.\)\s*$\n?",
+    "# Candidate build: upstream SUSFS compatibility stop bypassed after applying the pinned legacy adapter.\n",
+    compat_text,
+    count=1,
+)
+if removed != 1 or "$(error Please wait susfs update.)" in compat_text:
+    raise SystemExit("Could not remove and verify the single BakaSU SUSFS make-time stop")
+compat_mk.write_text(compat_text)
+if "$(error Please wait susfs update.)" in compat_mk.read_text():
+    raise SystemExit("BakaSU SUSFS make-time stop remains after compatibility edit")
+
 
 # Backport the SUSFS patch set's newer header and static-key API to Linux 3.18.
 defs = root / "include/linux/susfs_def.h"
