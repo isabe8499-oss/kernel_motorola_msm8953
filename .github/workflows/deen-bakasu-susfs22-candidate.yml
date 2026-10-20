@@ -84,11 +84,11 @@ jobs:
             --enable KSU_SUSFS \
             --disable KSU_MANUAL_HOOK \
             --disable KSU_TRACEPOINT_HOOK \
-            --enable KSU_SUSFS_SUS_PATH \
-            --enable KSU_SUSFS_SUS_MOUNT \
-            --enable KSU_SUSFS_SUS_KSTAT \
+            --disable KSU_SUSFS_SUS_PATH \
+            --disable KSU_SUSFS_SUS_MOUNT \
+            --disable KSU_SUSFS_SUS_KSTAT \
             --disable KSU_SUSFS_OPEN_REDIRECT \
-            --enable KSU_SUSFS_SUS_MAP \
+            --disable KSU_SUSFS_SUS_MAP \
             --enable KSU_SUSFS_SPOOF_UNAME \
             --enable KSU_SUSFS_ENABLE_LOG \
             --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
@@ -96,13 +96,9 @@ jobs:
           make O=out olddefconfig
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          grep -E '^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_SUSFS_SUS_PATH|CONFIG_KSU_SUSFS_SUS_MOUNT|CONFIG_KSU_SUSFS_SUS_KSTAT|CONFIG_KSU_SUSFS_SUS_MAP|CONFIG_KSU_SUSFS_SPOOF_UNAME|CONFIG_KSU_SUSFS_ENABLE_LOG|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG)=' out/.config | tee artifacts/candidate-config.txt
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_SUSFS_SPOOF_UNAME|CONFIG_KSU_SUSFS_ENABLE_LOG|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG)=' out/.config | tee artifacts/candidate-config.txt
 
       - name: Build candidate kernel
         run: |
@@ -129,7 +125,7 @@ jobs:
             cat artifacts/deferred-feature-contract.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Package experimental TWRP flashable ZIP (partial SUSFS profile)
+      - name: Package experimental TWRP flashable ZIP (safe triage profile)
         run: |
           set -euo pipefail
           AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
@@ -163,7 +159,7 @@ jobs:
           EXPERIMENTAL — NOT FULL SUSFS v2.2 FEATURE PARITY
           Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
           This package uses the successfully compiled candidate kernel only.
-          SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP are compile-tested compatibility ports. OPEN_REDIRECT remains disabled.
+          SAFE TRIAGE PROFILE: SUS_PATH, SUS_MOUNT, SUS_KSTAT, SUS_MAP and OPEN_REDIRECT are disabled to isolate reboot cause; only BakaSU and low-risk SUSFS options remain enabled.
           Successful compilation does not prove boot/runtime compatibility.
           Keep a known-good boot image and recovery access before testing.
           NOTE
