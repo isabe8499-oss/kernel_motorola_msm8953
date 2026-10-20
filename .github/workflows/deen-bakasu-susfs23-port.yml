@@ -50,16 +50,23 @@ jobs:
         id: core
         shell: bash
         run: |
+          # GitHub's bash runner starts with -e; disable it until diagnostics are archived.
+          set +e
           set -uo pipefail
           patch -p1 --batch --forward < /tmp/susfs-core.patch 2>&1 | tee susfs-core-apply.log
           status=${PIPESTATUS[0]}
-          rej_count=$(find . -type f -name '*.rej' | wc -l)
+          find . -type f -name '*.rej' -print > susfs-reject-files.txt
+          rej_count=$(wc -l < susfs-reject-files.txt)
           echo "status=${status}" >> "$GITHUB_OUTPUT"
           echo "reject_count=${rej_count}" >> "$GITHUB_OUTPUT"
           echo "Patch command status: ${status}; reject files: ${rej_count}"
-          tar -czf susfs-rejects.tar.gz --ignore-failed-read $(find . -type f \( -name '*.rej' -o -name '*.orig' \) -print) 2>/dev/null || true
+          if [ -s susfs-reject-files.txt ]; then
+            tar -czf susfs-rejects.tar.gz -T susfs-reject-files.txt
+          else
+            tar -czf susfs-rejects.tar.gz --files-from /dev/null
+          fi
           if [ "${status}" -ne 0 ] || [ "${rej_count}" -ne 0 ]; then
-            echo "Core SUSFS port is incomplete on this kernel; deliberately stopping before hooks/build/package."
+            echo "Core SUSFS port is incomplete on this kernel; saved reject files and deliberately stopping before hooks/build/package."
             exit 1
           fi
           test -f fs/susfs.c
@@ -75,6 +82,8 @@ jobs:
           path: |
             susfs-core-apply.log
             susfs-rejects.tar.gz
+            susfs-reject-files.txt
+            '**/*.rej'
             source-sha256.txt
           if-no-files-found: warn
           retention-days: 14
