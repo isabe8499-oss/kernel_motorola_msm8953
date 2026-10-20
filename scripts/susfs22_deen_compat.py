@@ -28,7 +28,7 @@ deferred_dir.mkdir(parents=True, exist_ok=True)
 # These rejected hunks are exclusively behind features disabled by this
 # allowlisted candidate profile; review the source hunks before changing this.
 deferred = {
-    "fs/namei.c.rej": "SUS_PATH and OPEN_REDIRECT rely on newer namei/path_openat APIs",
+    "fs/namei.c.rej": "SUS_PATH adapted to Linux 3.18; OPEN_REDIRECT remains deferred",
     "fs/namespace.c.rej": "SUS_MOUNT requires Linux 3.18 mount namespace adaptation",
     "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures differ in 3.18",
     "fs/proc/base.c.rej": "OPEN_REDIRECT integration deferred",
@@ -343,6 +343,88 @@ for rel in static_key_paths:
     if text != before:
         path.write_text(text)
 
+
+# Linux 3.18 SUS_PATH compatibility: its nameidata structure is in the public
+# header and path_init replaces the newer set_nameidata helper.
+nh_path = root / "include/linux/namei.h"
+nh = nh_path.read_text()
+if "unsigned int\tstate;" not in nh:
+    anchor = "\tunsigned int\tflags;\n"
+    if nh.count(anchor) != 1:
+        raise SystemExit("nameidata flags anchor mismatch; refusing SUS_PATH port")
+    nh = nh.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tunsigned int\tstate;\n#endif\n", 1)
+    nh_path.write_text(nh)
+
+np = root / "fs/namei.c"
+ns = np.read_text()
+p0 = ns.find("static int path_init(")
+p1 = ns.find("\n}", p0)
+if p0 < 0 or p1 < 0:
+    raise SystemExit("Linux 3.18 path_init not found")
+pf = ns[p0:p1]
+if "nd->state = 0;" not in pf:
+    anchor = "\tint retval = 0;\n"
+    if pf.count(anchor) != 1:
+        raise SystemExit("path_init state initialization anchor mismatch")
+    pf = pf.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tnd->state = 0;\n#endif\n", 1)
+    ns = ns[:p0] + pf + ns[p1:]
+
+l0 = ns.find("static inline int lookup_last(struct nameidata *nd, struct path *path)")
+l1 = ns.find("\n}", l0)
+if l0 < 0 or l1 < 0:
+    raise SystemExit("Linux 3.18 lookup_last not found")
+lf = ns[l0:l1]
+if "ND_STATE_LOOKUP_LAST" not in lf:
+    brace = lf.find("{")
+    lf = lf[:brace + 1] + "\n#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tnd->state |= ND_STATE_LOOKUP_LAST;\n#endif\n" + lf[brace + 1:]
+    ns = ns[:l0] + lf + ns[l1:]
+
+d0 = ns.find("static int do_last(struct nameidata *nd, struct path *path")
+d1 = ns.find("\n}", d0)
+if d0 < 0 or d1 < 0:
+    raise SystemExit("Linux 3.18 do_last not found")
+df = ns[d0:d1]
+if "ND_STATE_OPEN_LAST" not in df:
+    brace = df.find("{")
+    df = df[:brace + 1] + "\n#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tnd->state |= ND_STATE_OPEN_LAST;\n#endif\n" + df[brace + 1:]
+    ns = ns[:d0] + df + ns[d1:]
+
+w0 = ns.find("static inline int walk_component(struct nameidata *nd, struct path *path,")
+w1 = ns.find("\n}", w0)
+if w0 < 0 or w1 < 0:
+    raise SystemExit("Linux 3.18 walk_component not found")
+wf = ns[w0:w1]
+if "susfs_is_inode_sus_path(inode)" not in wf:
+    anchor = "\tif (!inode || d_is_negative(path->dentry))\n\t\tgoto out_path_put;\n"
+    if wf.count(anchor) != 1:
+        raise SystemExit("walk_component SUS_PATH anchor mismatch")
+    extra = anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tif (inode && susfs_is_inode_sus_path(inode)) {\n\t\terr = -ENOENT;\n\t\tgoto out_path_put;\n\t}\n#endif\n"
+    wf = wf.replace(anchor, extra, 1)
+    ns = ns[:w0] + wf + ns[w1:]
+np.write_text(ns)
+
+# Apply the rejected fillonedir hunk using the actual Linux 3.18 callback.
+rp = root / "fs/readdir.c"
+rs = rp.read_text()
+r0 = rs.find("static int fillonedir(")
+r1 = rs.find("\n}", r0)
+if r0 < 0 or r1 < 0:
+    raise SystemExit("fillonedir callback not found")
+rf = rs[r0:r1]
+if "struct inode *inode;" not in rf:
+    anchor = "\tunsigned long d_ino;\n"
+    if rf.count(anchor) != 1:
+        raise SystemExit("fillonedir inode declaration anchor mismatch")
+    rf = rf.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tstruct inode *inode;\n#endif\n", 1)
+if "susfs_is_inode_sus_path(inode)" not in rf:
+    anchor = "\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {\n\t\tbuf->result = -EOVERFLOW;\n\t\treturn -EOVERFLOW;\n\t}\n"
+    if rf.count(anchor) != 1:
+        raise SystemExit("fillonedir SUS_PATH anchor mismatch")
+    extra = anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tinode = ilookup(buf->sb, ino);\n\tif (inode) {\n\t\tif (susfs_is_inode_sus_path(inode)) {\n\t\t\tiput(inode);\n\t\t\treturn 0;\n\t\t}\n\t\tiput(inode);\n\t}\n#endif\n"
+    rf = rf.replace(anchor, extra, 1)
+    rs = rs[:r0] + rf + rs[r1:]
+rp.write_text(rs)
+
 # Preserve every rejected hunk verbatim, then remove only the allowlisted
 # .rej files because the candidate profile explicitly disables those features.
 manifest = []
@@ -375,8 +457,8 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 candidate profile — NOT full feature parity\n"
-    "KSU_SUSFS_SUS_PATH=n\n"
+    "SUSFS v2.2 Linux 3.18 candidate profile — partial feature parity; SUS_PATH compile-tested only\n"
+    "KSU_SUSFS_SUS_PATH=y\n"
     "KSU_SUSFS_SUS_MOUNT=n\n"
     "KSU_SUSFS_SUS_KSTAT=n\n"
     "KSU_SUSFS_OPEN_REDIRECT=n\n"
