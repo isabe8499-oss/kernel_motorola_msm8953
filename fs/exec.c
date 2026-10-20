@@ -66,9 +66,13 @@
 
 #include <trace/events/sched.h>
 
-#ifdef CONFIG_KSU
+#ifdef CONFIG_KSU_MANUAL_HOOK
+__attribute__((hot))
 extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
 			       void *argv, void *envp, int *flags);
+__attribute__((hot))
+extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
+			       void *argv, void *envp, int *flags, int *retval);
 #endif
 
 int suid_dumpable = 0;
@@ -1507,13 +1511,13 @@ static int do_execve_common(struct filename *filename,
 	struct files_struct *displaced;
 	int retval;
 	bool is_su;
-#ifdef CONFIG_KSU
+#ifdef CONFIG_KSU_MANUAL_HOOK
 	int fd = AT_FDCWD;
 	int flags = 0;
 #endif
 
-#ifdef CONFIG_KSU
-	/* Legacy execve path on Linux 3.18: model execveat as AT_FDCWD, flags=0. */
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	/* Linux 3.18 has execve, not execveat: adapt the legacy path. */
 	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
 #endif
 	if (IS_ERR(filename))
@@ -1622,6 +1626,9 @@ static int do_execve_common(struct filename *filename,
 	acct_update_integrals(current);
 	task_numa_free(current);
 	free_bprm(bprm);
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_post_execveat(&fd, &filename, &argv, &envp, &flags, &retval);
+#endif
 	putname(filename);
 	if (displaced)
 		put_files_struct(displaced);
@@ -1644,6 +1651,9 @@ out_files:
 	if (displaced)
 		reset_files_struct(displaced);
 out_ret:
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_post_execveat(&fd, &filename, &argv, &envp, &flags, &retval);
+#endif
 	putname(filename);
 	return retval;
 }
