@@ -3,7 +3,7 @@ name: Deen BakaSU + SUSFS v2.2 Linux 3.18 candidate build
 on:
   push:
     branches:
-      - deen-bakasu-susfs22-port-test
+      - deen-bakasu-susfs22-gcc49-test
   workflow_dispatch:
 
 permissions:
@@ -23,7 +23,15 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio patch zip
+          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev make python3 git curl cpio patch zip
+
+      - name: Install and verify the GCC 4.9 toolchain used by the known Deen kernel
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch google https://github.com/GrowtopiaJaw/aarch64-linux-android-4.9.git toolchain
+          test -x toolchain/bin/aarch64-linux-android-gcc
+          mkdir -p artifacts
+          toolchain/bin/aarch64-linux-android-gcc --version | head -n 1 | tee artifacts/toolchain-version.txt
 
       - name: Integrate pinned BakaSU source
         run: |
@@ -77,7 +85,8 @@ jobs:
         run: |
           set -euo pipefail
           export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
+          export CROSS_COMPILE=aarch64-linux-android-
           make O=out deen_defconfig
           scripts/config --file out/.config \
             --enable KSU \
@@ -109,7 +118,8 @@ jobs:
         run: |
           set -euo pipefail
           export ARCH=arm64
-          export CROSS_COMPILE=aarch64-linux-gnu-
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
+          export CROSS_COMPILE=aarch64-linux-android-
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
@@ -120,8 +130,9 @@ jobs:
           cp out/.config artifacts/kernel.config
           nm out/vmlinux | grep -E 'susfs|ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
           cp bakasu-source-commit.txt artifacts/
+          cp artifacts/toolchain-version.txt artifacts/
           {
-            echo '## SUSFS v2.2 Linux 3.18.140 candidate'
+            echo '## SUSFS v2.2 GCC 4.9 bootloop-isolation build'
             echo
             echo 'This is a partial compatibility profile. Bootloop-isolation profile: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP are disabled; only non-VFS spoof/logging options remain enabled. This reduces VFS hook risk but does not prove the device will boot. A successful compile is not device boot/runtime validation.'
             echo
@@ -140,7 +151,7 @@ jobs:
           cat > anykernel/anykernel.sh <<'AK3'
           ### Deen XT1941-3 experimental kernel package
           properties() { '
-          kernel.string=Deen BakaSU + SUSFS v2.2 partial candidate (experimental)
+          kernel.string=Deen BakaSU + SUSFS v2.2 GCC 4.9 test (experimental)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -161,7 +172,7 @@ jobs:
           write_boot
           AK3
           cat > anykernel/NOT-FULL-SUSFS.txt <<'NOTE'
-          EXPERIMENTAL — NOT FULL SUSFS v2.2 FEATURE PARITY
+          GCC 4.9 CONTROL BUILD — EXPERIMENTAL — NOT FULL SUSFS v2.2 FEATURE PARITY
           Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
           This package uses the successfully compiled candidate kernel only.
           Bootloop-isolation profile: all SUSFS VFS/path hooks are disabled. This is a diagnostic safer profile, not full SUSFS v2.2 feature parity.
@@ -169,17 +180,17 @@ jobs:
           Keep a known-good boot image and recovery access before testing.
           NOTE
           cd anykernel
-          zip -qr9 ../artifacts/deen-bakasu-susfs22-partial-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          zip -qr9 ../artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
-          sha256sum artifacts/deen-bakasu-susfs22-partial-twrp.zip | tee artifacts/flashable-zip-sha256.txt
-          unzip -t artifacts/deen-bakasu-susfs22-partial-twrp.zip
-          test -s artifacts/deen-bakasu-susfs22-partial-twrp.zip
+          sha256sum artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip | tee artifacts/flashable-zip-sha256.txt
+          unzip -t artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip
+          test -s artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip
 
       - name: Upload candidate and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deen-linux-3.18.140-susfs22-candidate
+          name: deen-linux-3.18.140-susfs22-gcc49-control
           path: |
             artifacts/
             susfs_inline22.sh
