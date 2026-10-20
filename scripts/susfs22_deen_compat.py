@@ -452,12 +452,12 @@ if "#include <linux/susfs_def.h>" not in mount_ns:
     if mount_ns.count(task_work_anchor) != 1:
         raise SystemExit("namespace.c SUS_MOUNT include anchor mismatch")
     mount_ns = mount_ns.replace(task_work_anchor, task_work_anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n#include <linux/susfs_def.h>\n#endif\n", 1)
-mount_anchor = "/* Maximum number of mounts in a mount namespace */"
+mount_anchor = '#include "internal.h"\n'
 if "extern bool susfs_is_current_ksu_domain(void);" not in mount_ns:
     defs = "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nextern bool susfs_is_current_ksu_domain(void);\nextern struct static_key susfs_is_sdcard_android_data_not_decrypted;\n#define CL_COPY_MNT_NS BIT(25)\n#endif\n\n"
     if mount_ns.count(mount_anchor) != 1:
         raise SystemExit("namespace.c SUS_MOUNT declaration anchor mismatch")
-    mount_ns = mount_ns.replace(mount_anchor, defs + mount_anchor, 1)
+    mount_ns = mount_ns.replace(mount_anchor, mount_anchor + "\n" + defs, 1)
 mount_ns_path.write_text(mount_ns)
 
 # Linux 3.18 fsnotify callbacks return int and carry a different callback type
