@@ -111,6 +111,92 @@ jobs:
           grep -q 'ksu_handle_execveat' fs/exec.c
           grep -q 'ksu_handle_post_execveat' fs/exec.c
 
+      - name: Integrate legacy faccessat/stat/vfs_read/reboot hooks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def patch_once(path, marker, replacement, label):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(marker)
+              if n != 1:
+                  raise SystemExit(f"{label}: expected exactly one marker, found {n}; refusing patch")
+              p.write_text(s.replace(marker, replacement, 1))
+              print(f"patched {path}: {label}")
+
+          patch_once("fs/open.c",
+          """\tunsigned int lookup_flags = LOOKUP_FOLLOW;
+
+          \tif (mode & ~S_IRWXO)""",
+          """\tunsigned int lookup_flags = LOOKUP_FOLLOW;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
+          \t\t\t\t\tint *mode, int *__unused_flags);
+          \t\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          \t}
+          #endif
+
+          \tif (mode & ~S_IRWXO)""", "faccessat")
+
+          patch_once("fs/stat.c",
+          """\tif (flag & AT_EMPTY_PATH)
+          \t\tlookup_flags |= LOOKUP_EMPTY;
+          retry:""",
+          """\tif (flag & AT_EMPTY_PATH)
+          \t\tlookup_flags |= LOOKUP_EMPTY;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+          \t\tksu_handle_stat(&dfd, &filename, &flag);
+          \t}
+          #endif
+
+          retry:""", "stat")
+
+          patch_once("fs/read_write.c",
+          """\tif (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
+          \t\treturn -EFAULT;
+
+          \tret = rw_verify_area(READ, file, pos, count);""",
+          """\tif (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
+          \t\treturn -EFAULT;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
+          \t\t\t\t\t\tsize_t *count_ptr, loff_t **pos);
+          \t\tksu_handle_vfs_read(&file, &buf, &count, &pos);
+          \t}
+          #endif
+
+          \tret = rw_verify_area(READ, file, pos, count);""", "vfs_read")
+
+          patch_once("kernel/reboot.c",
+          """\tint ret = 0;
+
+          \t/* We only trust the superuser with this function. */""",
+          """\tint ret = 0;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
+          \t\tif (magic1 == 0xDEADBEEF)
+          \t\t\treturn ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+          \t}
+          #endif
+
+          \t/* We only trust the superuser with this function. */""", "sys_reboot")
+          PY
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+          grep -q 'ksu_handle_vfs_read' fs/read_write.c
+          grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
+
       - name: Configure manual hook and verify config
         run: |
           set -euo pipefail
