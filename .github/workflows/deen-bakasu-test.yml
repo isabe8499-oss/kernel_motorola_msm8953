@@ -33,6 +33,84 @@ jobs:
           test -f drivers/kernelsu/Kconfig
           git -C KernelSU rev-parse HEAD | tee bakasu-source-commit.txt
 
+      - name: Integrate legacy execve hooks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("fs/exec.c")
+          s = p.read_text()
+
+          marker = """static int do_execve_common(struct filename *filename,
+          				struct user_arg_ptr argv,
+          				struct user_arg_ptr envp)
+          {"""
+          replacement = """#ifdef CONFIG_KSU_MANUAL_HOOK
+          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
+          				void *argv, void *envp, int *flags);
+          extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
+          				void *argv, void *envp, int *flags, int *retval);
+          #endif
+
+          static int do_execve_common(struct filename *filename,
+          				struct user_arg_ptr argv,
+          				struct user_arg_ptr envp)
+          {"""
+          assert s.count(marker) == 1, "do_execve_common marker not unique; refusing unsafe patch"
+          s = s.replace(marker, replacement, 1)
+
+          old_vars = """	int retval;
+          	bool is_su;
+
+          	if (IS_ERR(filename))
+          		return PTR_ERR(filename);"""
+          new_vars = """	int retval;
+          	bool is_su;
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	int ksu_fd = AT_FDCWD;
+          	int ksu_flags = 0;
+          #endif
+
+          	if (IS_ERR(filename))
+          		return PTR_ERR(filename);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags);
+          #endif"""
+          assert s.count(old_vars) == 1, "execve local/guard block not unique; refusing unsafe patch"
+          s = s.replace(old_vars, new_vars, 1)
+
+          success = """	free_bprm(bprm);
+          	putname(filename);
+          	if (displaced)"""
+          success_new = """	free_bprm(bprm);
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+          #endif
+          	putname(filename);
+          	if (displaced)"""
+          assert s.count(success) == 1, "success cleanup marker not unique; refusing unsafe patch"
+          s = s.replace(success, success_new, 1)
+
+          failure = """out_ret:
+          	putname(filename);
+          	return retval;"""
+          failure_new = """out_ret:
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+          #endif
+          	putname(filename);
+          	return retval;"""
+          assert s.count(failure) == 1, "failure cleanup marker not unique; refusing unsafe patch"
+          s = s.replace(failure, failure_new, 1)
+
+          p.write_text(s)
+          print("Patched fs/exec.c: manual execveat pre/post hooks placed while struct filename is still valid.")
+          PY
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_post_execveat' fs/exec.c
+
       - name: Configure manual hook and verify config
         run: |
           set -euo pipefail
