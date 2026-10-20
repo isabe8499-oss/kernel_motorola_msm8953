@@ -27,11 +27,14 @@ jobs:
       - name: Integrate BakaSU source
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh -o /tmp/bakasu-setup.sh
-          sh /tmp/bakasu-setup.sh
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh "${BAKASU_COMMIT}"
           test -L drivers/kernelsu
           test -f drivers/kernelsu/Kconfig
-          git -C KernelSU rev-parse HEAD | tee bakasu-source-commit.txt
+          ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
+          echo "${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
+          test "${ACTUAL_COMMIT}" = "${BAKASU_COMMIT}"
 
       - name: Integrate legacy execve hooks
         run: |
