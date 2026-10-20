@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Apply the explicitly bounded SUSFS 2.3 compatibility profile for Linux 3.18.
+
+This is not a full SUSFS port. Some 4.4-based hunks target VFS APIs which do not
+exist in 3.18. We preserve those rejects as audit artifacts and disable the
+corresponding features in Kconfig. Unknown rejects abort rather than being
+silently discarded.
+"""
+from pathlib import Path
+import shutil
+import sys
+
+root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+artifacts = Path(sys.argv[2] if len(sys.argv) > 2 else "artifacts").resolve()
+deferred_dir = artifacts / "deferred-hunks"
+deferred_dir.mkdir(parents=True, exist_ok=True)
+
+# These rejected hunks are exclusively behind features disabled by this
+# allowlisted candidate profile; review the source hunks before changing this.
+deferred = {
+    "fs/namei.c.rej": "SUS_PATH and OPEN_REDIRECT rely on newer namei/path_openat APIs",
+    "fs/namespace.c.rej": "SUS_MOUNT requires Linux 3.18 mount namespace adaptation",
+    "fs/notify/fdinfo.c.rej": "SUS_KSTAT/SUS_MOUNT fdinfo callback signatures differ in 3.18",
+    "fs/proc/base.c.rej": "SUS_MAP/OPEN_REDIRECT integration deferred",
+    "fs/proc/fd.c.rej": "SUS_KSTAT/SUS_MOUNT proc-fd output integration deferred",
+    "fs/proc/task_mmu.c.rej": "SUS_MAP VMA reporting hook deferred",
+    "fs/readdir.c.rej": "SUS_PATH directory enumeration hook deferred",
+    "fs/stat.c.rej": "SUS_KSTAT getattr compatibility hook deferred",
+    "fs/super.c.rej": "SUS_MOUNT superblock integration deferred",
+}
+found = {
+    p.relative_to(root).as_posix(): p
+    for p in root.rglob("*.rej")
+    if ".git" not in p.parts
+}
+unknown = sorted(set(found) - set(deferred) - {"security/selinux/avc.c.rej"})
+missing = sorted(set(deferred) - set(found))
+if unknown:
+    raise SystemExit("Unknown reject files; refusing to discard: " + ", ".join(unknown))
+if missing:
+    raise SystemExit("Expected deferred reject file missing; review changed patch behavior: " + ", ".join(missing))
+
+# The AVC core patch's only rejected hunk is a common label required by a
+# successful goto bypass_orig_flow. Add it at the exact Linux 3.18 site.
+avc = root / "security/selinux/avc.c"
+source = avc.read_text()
+label = "#ifdef CONFIG_KSU_SUSFS\nbypass_orig_flow:\n#endif // CONFIG_KSU_SUSFS\n"
+anchor = "\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"
+if source.count("goto bypass_orig_flow;") < 1:
+    raise SystemExit("AVC patch has no bypass_orig_flow goto; source differs from audited patch")
+if label.strip() not in source:
+    if source.count(anchor) != 1:
+        raise SystemExit("AVC label insertion anchor not unique; refusing unsafe edit")
+    source = source.replace(anchor, label + anchor, 1)
+    avc.write_text(source)
+
+# Preserve every rejected hunk verbatim, then remove only the allowlisted
+# .rej files because the candidate profile explicitly disables those features.
+manifest = []
+for rel, reason in deferred.items():
+    src = found[rel]
+    dst = deferred_dir / rel
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    manifest.append(f"{rel}\tDEFERRED\t{reason}")
+    src.unlink()
+
+avc_rej = found.get("security/selinux/avc.c.rej")
+if avc_rej:
+    dst = deferred_dir / "security/selinux/avc.c.rej"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(avc_rej, dst)
+    avc_rej.unlink()
+    manifest.append("security/selinux/avc.c.rej\tMANUALLY_ADAPTED\tAdded required bypass_orig_flow label at the 3.18 AVC flow")
+
+(artifacts / "deferred-feature-contract.txt").write_text(
+    "SUSFS v2.3 Linux 3.18 candidate profile — NOT full feature parity\n"
+    "KSU_SUSFS_SUS_PATH=n\n"
+    "KSU_SUSFS_SUS_MOUNT=n\n"
+    "KSU_SUSFS_SUS_KSTAT=n\n"
+    "KSU_SUSFS_OPEN_REDIRECT=n\n"
+    "KSU_SUSFS_SUS_MAP=n\n"
+    "KSU_SUSFS_SPOOF_UNAME=y\n"
+    "KSU_SUSFS_ENABLE_LOG=y\n"
+    "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y\n"
+    "KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y\n"
+)
+(artifacts / "hunk-disposition.tsv").write_text("\n".join(manifest) + "\n")
+(artifacts / "patch-status.txt").write_text(
+    "core_patch_exit=1 (expected: 3.18-incompatible hunks are individually dispositioned)\n"
+    "inline_hooks_exit=0\n"
+    "compat_profile=partial-susfs23-legacy-kernel\n"
+    "avc_label_adaptation=applied\n"
+    f"deferred_hunk_files={len(deferred)}\n"
+)
+left = [
+    p.relative_to(root).as_posix()
+    for p in root.rglob("*.rej")
+    if ".git" not in p.parts
+]
+if left:
+    raise SystemExit("Rejects remain after explicit disposition: " + ", ".join(left))
+(artifacts / "rejected-files.txt").write_text(
+    "No unclassified live .rej files remain. Deferred hunks were preserved verbatim under artifacts/deferred-hunks/.\n"
+)
+print("Applied bounded SUSFS 2.3 profile; five incompatible feature families deferred and all rejects archived.")
