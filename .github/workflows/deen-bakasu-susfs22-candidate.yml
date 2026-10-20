@@ -1,9 +1,9 @@
-name: Deen BakaSU manual-hook GCC 4.9 TWRP control build
+name: Deen BakaSU + SUSFS v2.2 GCC 4.9 manual-hook stage 1
 
 on:
   push:
     branches:
-      - deen-bakasu-susfs22-gcc49-test
+      - deen-bakasu-susfs22-gcc49-stage1
   workflow_dispatch:
 
 permissions:
@@ -245,7 +245,34 @@ jobs:
           grep -q 'ksu_handle_fstat64_ret' fs/stat.c
           grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
 
-      - name: Configure manual hook and verify config
+      - name: Download pinned SUSFS v2.2 patch and inline hooks
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          CORE_COMMIT=30492fd415f12414104beb14349e83e58017dfa9
+          HOOK_COMMIT=16b6032141d284423160182577fb465e55e4925d
+          curl -fsSL "https://raw.githubusercontent.com/redmax19/build/$CORE_COMMIT/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4_v22.patch
+          curl -fsSL "https://raw.githubusercontent.com/kyzuna28/Compiler/$HOOK_COMMIT/hook%20v1/susfs_inline22.sh" -o susfs_inline22.sh
+          sha256sum /tmp/susfs_patch_to_4.4_v22.patch susfs_inline22.sh | tee artifacts/susfs-source-sha256.txt
+          printf 'Core_patch=redmax19/build@%s\nInline_hooks=kyzuna28/Compiler@%s\n' "$CORE_COMMIT" "$HOOK_COMMIT" | tee artifacts/susfs-source-commits.txt
+
+      - name: Apply SUSFS v2.2 and Deen 3.18 compatibility adapter
+        run: |
+          set -euo pipefail
+          set +e
+          patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4_v22.patch > artifacts/susfs-core-patch.log 2>&1
+          core_rc=$?
+          bash susfs_inline22.sh > artifacts/susfs-inline-hooks.log 2>&1
+          hook_rc=$?
+          set -e
+          printf 'core_patch_exit=%s\ninline_hooks_exit=%s\n' "$core_rc" "$hook_rc" | tee artifacts/patch-status.txt
+          test "$hook_rc" -eq 0
+          python3 scripts/susfs22_deen_compat.py . artifacts
+          cat artifacts/patch-status.txt
+          cat artifacts/deferred-feature-contract.txt
+          git diff --check
+
+      - name: Configure SUSFS stage-1 profile with working manual hooks
         run: |
           set -euo pipefail
           export ARCH=arm64
@@ -253,20 +280,40 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-android-
           make O=out deen_defconfig
           grep -q 'config KSU_MANUAL_HOOK' drivers/kernelsu/Kconfig
-          scripts/config --file out/.config --enable KSU --enable KSU_MANUAL_HOOK \
+          scripts/config --file out/.config \
+            --enable KSU \
+            --enable KSU_MANUAL_HOOK \
+            --enable KSU_SUSFS \
             --disable KSU_TRACEPOINT_HOOK \
-            --disable KSU_SUSFS \
             --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
             --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
-            --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
+            --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
+            --disable KSU_SUSFS_SUS_PATH \
+            --disable KSU_SUSFS_SUS_MOUNT \
+            --disable KSU_SUSFS_SUS_KSTAT \
+            --disable KSU_SUSFS_OPEN_REDIRECT \
+            --disable KSU_SUSFS_SUS_MAP \
+            --enable KSU_SUSFS_SPOOF_UNAME \
+            --enable KSU_SUSFS_ENABLE_LOG \
+            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
           make O=out olddefconfig
-          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS is not set$' out/.config
-          grep -E '^(CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK)=' out/.config
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_MOUNT is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_KSTAT is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_MAP is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y$' out/.config
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK|CONFIG_KSU_SUSFS|CONFIG_KSU_SUSFS_SPOOF_UNAME|CONFIG_KSU_SUSFS_ENABLE_LOG|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG)=' out/.config | tee artifacts/candidate-config.txt
 
-      - name: Build BakaSU test kernel
+      - name: Build SUSFS stage-1 kernel
         run: |
           set -euo pipefail
           export ARCH=arm64
@@ -277,21 +324,23 @@ jobs:
           test -s out/vmlinux
           # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
           nm out/vmlinux | grep -q ksu_handle_sys_reboot
+          nm out/vmlinux | grep -q susfs
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image.gz-dtb artifacts/
           cp out/.config artifacts/kernel.config
-          nm out/vmlinux | grep -E 'ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/bakasu-symbols.txt
+          nm out/vmlinux | grep -E 'susfs|ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/kernel-symbols.txt
           find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
           cp bakasu-source-commit.txt artifacts/
           {
-            echo '## BakaSU manual-hook test'
-            echo 'Build completed with KSU_MANUAL_HOOK enabled and KSU_TRACEPOINT_HOOK disabled; the reboot supercall symbol is checked in the linked vmlinux.'
-            echo 'This verifies config, compilation, and linked symbols only; device boot/runtime validation is still required.'
-            echo 'SUSFS is deliberately not enabled: upstream BakaSU documents SUSFS backports for kernel 4.3+, while this target is Linux 3.18.'
+            echo '## Deen BakaSU + SUSFS v2.2 stage-1 build'
+            echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP remain disabled.'
+            echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
+            cat artifacts/patch-status.txt
+            cat artifacts/deferred-feature-contract.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
 
-      - name: Package experimental TWRP flashable ZIP (BakaSU manual-hook, no SUSFS)
+      - name: Package experimental TWRP flashable ZIP (SUSFS stage 1)
         run: |
           set -euo pipefail
           AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
@@ -299,9 +348,9 @@ jobs:
           git -C anykernel checkout --detach "$AK3_COMMIT"
           cp artifacts/Image.gz-dtb anykernel/Image.gz-dtb
           cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 BakaSU manual-hook diagnostic kernel
+          ### Deen XT1941-3 BakaSU + SUSFS v2.2 stage-1 kernel
           properties() { '
-          kernel.string=Deen BakaSU manual-hook GCC 4.9 control (no SUSFS; experimental)
+          kernel.string=Deen BakaSU + SUSFS v2.2 stage 1 GCC 4.9 (experimental)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -321,26 +370,26 @@ jobs:
           dump_boot
           write_boot
           AK3
-          cat > anykernel/BAKASU-MANUAL-HOOK-CONTROL.txt <<'NOTE'
-          EXPERIMENTAL CONTROL BUILD — BAKASU MANUAL HOOK, SUSFS DISABLED
+          cat > anykernel/SUSFS-STAGE1-EXPERIMENTAL.txt <<'NOTE'
+          EXPERIMENTAL SUSFS v2.2 STAGE-1 BUILD
           Target: Motorola One Deen / XT1941-3, Linux 3.18.140.
-          This build uses GCC 4.9 and the legacy manual-hook integration path.
-          No SUSFS core patches or SUSFS features are included.
-          CI compilation and ZIP integrity do not prove this kernel boots on every ROM.
-          Preserve a known-good boot image and recovery access before testing.
+          Keeps the known-working GCC 4.9 BakaSU manual-hook setup.
+          Enabled SUSFS options: spoof uname, logging, hide SUSFS symbols, spoof cmdline/bootconfig.
+          Disabled SUSFS options: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SUS_MAP.
+          Compile/ZIP checks do not prove boot/runtime compatibility. Keep a known-good Boot backup and recovery access.
           NOTE
           cd anykernel
-          zip -qr9 ../artifacts/Deen-BakaSU-GCC49-Manual-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
-          unzip -t artifacts/Deen-BakaSU-GCC49-Manual-TWRP.zip
-          sha256sum artifacts/Deen-BakaSU-GCC49-Manual-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
-          test -s artifacts/Deen-BakaSU-GCC49-Manual-TWRP.zip
+          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
+          test -s artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
 
       - name: Upload BakaSU GCC 4.9 TWRP package and diagnostics
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: deen-linux-3.18.140-bakasu-manual-hook-gcc49-twrp
+          name: deen-linux-3.18.140-bakasu-susfs22-stage1-gcc49
           path: artifacts/
           if-no-files-found: error
           retention-days: 7
