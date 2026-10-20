@@ -139,6 +139,46 @@ for rel in ("fs/open.c", "fs/stat.c", "fs/exec.c"):
     text = text.replace("static_key_enabled(&ksu_su_compat_enabled)", "ksu_su_compat_enabled")
     path.write_text(text)
 
+# The upstream v2.2 hook script assumes do_execveat_common(fd, ..., flags),
+# which does not exist in this Linux 3.18 tree. This tree's do_execve_common()
+# represents execve() only, so provide its correct legacy values (AT_FDCWD, 0)
+# and the missing declarations rather than leaving undefined fd/flags variables.
+exec_path = root / "fs/exec.c"
+exec_source = exec_path.read_text()
+if "#include <linux/susfs_def.h>" not in exec_source:
+    include_anchor = "#include <linux/namei.h>\n"
+    if exec_source.count(include_anchor) != 1:
+        raise SystemExit("Could not uniquely locate exec.c namei include for SUSFS declarations")
+    exec_source = exec_source.replace(
+        include_anchor,
+        include_anchor + "#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs_def.h>\n#include <linux/jump_label.h>\n#endif\n",
+        1
+    )
+decl_anchor = "static int do_execve_common(struct filename *filename,\n\t\t\t\tstruct user_arg_ptr argv,\n\t\t\t\tstruct user_arg_ptr envp)\n{"
+decls = """#ifdef CONFIG_KSU_SUSFS
+extern bool ksu_su_compat_enabled;
+extern struct static_key susfs_is_sdcard_android_data_not_decrypted;
+extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);
+extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);
+#endif
+
+"""
+if exec_source.count(decl_anchor) != 1:
+    raise SystemExit("Linux 3.18 do_execve_common marker not unique; refusing exec hook adaptation")
+if "extern int ksu_handle_execveat_sucompat" not in exec_source:
+    exec_source = exec_source.replace(decl_anchor, decls + decl_anchor, 1)
+local_anchor = decl_anchor
+local_replacement = local_anchor + """
+#ifdef CONFIG_KSU_SUSFS
+\tint fd = AT_FDCWD;
+\tint flags = 0;
+#endif"""
+if exec_source.count(local_anchor) != 1:
+    raise SystemExit("Linux 3.18 do_execve_common local insertion point not unique")
+if "int fd = AT_FDCWD;" not in exec_source:
+    exec_source = exec_source.replace(local_anchor, local_replacement, 1)
+exec_path.write_text(exec_source)
+
 # BakaSU currently has a deliberate SUSFS compatibility stop. The isolated
 # candidate removes only that unconditional make-time stop; all compiler and
 # hook checks remain enabled.
