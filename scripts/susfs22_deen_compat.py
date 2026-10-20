@@ -697,7 +697,7 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 safe triage profile — risky VFS hooks disabled to isolate reboot loop\n"
+    "SUSFS v2.2 Linux 3.18 partial compatibility profile — SUS_PATH/SUS_MOUNT/SUS_KSTAT/SUS_MAP enabled and compile-tested only; runtime/boot unverified\n"
     "KSU_SUSFS_SUS_PATH=y\n"
     "KSU_SUSFS_SUS_MOUNT=y\n"
     "KSU_SUSFS_SUS_KSTAT=y\n"
