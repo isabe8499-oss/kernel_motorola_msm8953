@@ -149,7 +149,7 @@ jobs:
           scripts/config --file out/.config \
             --enable KSU \
             --enable KSU_SUSFS \
-            --disable KSU_MANUAL_HOOK \
+            --enable KSU_MANUAL_HOOK \
             --disable KSU_TRACEPOINT_HOOK \
             --disable KSU_SUSFS_SUS_PATH \
             --disable KSU_SUSFS_SUS_MOUNT \
@@ -163,7 +163,47 @@ jobs:
           make O=out olddefconfig
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
+          for symbol in KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
+            grep -q "^CONFIG_$symbol=y$" out/.config
+          done
+          for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
+            grep -q "^# CONFIG_$symbol is not set$" out/.config
+          done
+          cp out/.config artifacts/kernel.config
+
+      - name: Compile SUSFS v2.3 candidate (only after strict port gate)
+        if: success()
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          test -s out/vmlinux
+          nm out/vmlinux | grep -q susfs_init
+          nm out/vmlinux | grep -q susfs_show_version
+          mkdir -p artifacts/build
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/build/
+          cp out/vmlinux artifacts/build/vmlinux
+          nm out/vmlinux | grep -E 'susfs_|ksu_handle_' > artifacts/build/susfs-bakasu-symbols.txt
+          {
+            echo '## SUSFS partial-profile candidate build'
+            echo 'The kernel compiled with CONFIG_KSU_SUSFS and the bounded feature subset. SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, and SUS_MAP remain disabled; this is not full SUSFS v2.3 parity, not a flash package, and not device boot validation.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SUSFS candidate diagnostics and build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-susfs23-44-candidate
+          path: |
+            artifacts/
+            susfs_inline_hook_patches.sh
+          if-no-files-found: warn
+          retention-days: 14
+ out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
           for symbol in KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
             grep -q "^CONFIG_$symbol=y$" out/.config
