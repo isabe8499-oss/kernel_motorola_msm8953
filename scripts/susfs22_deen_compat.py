@@ -29,7 +29,7 @@ deferred_dir.mkdir(parents=True, exist_ok=True)
 # allowlisted candidate profile; review the source hunks before changing this.
 deferred = {
     "fs/namei.c.rej": "SUS_PATH adapted to Linux 3.18; OPEN_REDIRECT remains deferred",
-    "fs/namespace.c.rej": "SUS_MOUNT namespace declarations adapted for Linux 3.18",
+    "fs/namespace.c.rej": "SUS_MOUNT code adapted but disabled for safe reboot-loop triage",
     "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures and inode spoof adapted for Linux 3.18",
     "fs/proc/base.c.rej": "OPEN_REDIRECT integration deferred",
     "fs/proc/fd.c.rej": "SUS_MOUNT proc-fd output adapted for Linux 3.18",
@@ -661,17 +661,17 @@ for rel, reason in deferred.items():
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     if rel == "fs/namei.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH path-walk adapted; OPEN_REDIRECT remains deferred")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH code adapted but disabled for safe reboot-loop triage")
     elif rel == "fs/readdir.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir adapted for Linux 3.18")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir code adapted but disabled for safe reboot-loop triage")
     elif rel == "fs/namespace.c.rej":
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT namespace declarations adapted for Linux 3.18")
     elif rel == "fs/notify/fdinfo.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT fdinfo callbacks adapted for Linux 3.18")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT fdinfo code adapted but disabled for safe reboot-loop triage")
     elif rel == "fs/proc/fd.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd spoof adapted for Linux 3.18")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd code adapted but disabled for safe reboot-loop triage")
     elif rel == "fs/proc/task_mmu.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP show_smap hook adapted; remaining whitespace hunk irrelevant")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP code adapted but disabled for safe reboot-loop triage")
     else:
         manifest.append(f"{rel}\tDEFERRED\t{reason}")
     src.unlink()
@@ -697,7 +697,7 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 candidate profile — SUS_PATH/SUS_MOUNT/SUS_KSTAT/SUS_MAP compile-tested only\n"
+    "SUSFS v2.2 Linux 3.18 safe triage profile — risky VFS hooks disabled to isolate reboot loop\n"
     "KSU_SUSFS_SUS_PATH=y\n"
     "KSU_SUSFS_SUS_MOUNT=y\n"
     "KSU_SUSFS_SUS_KSTAT=y\n"
