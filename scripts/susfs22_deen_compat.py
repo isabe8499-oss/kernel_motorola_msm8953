@@ -460,6 +460,47 @@ if "extern bool susfs_is_current_ksu_domain(void);" not in mount_ns:
     mount_ns = mount_ns.replace(mount_anchor, mount_anchor + "\n" + defs, 1)
 mount_ns_path.write_text(mount_ns)
 
+# Replace the newer 4.4 mount allocator clones with wrappers around the
+# native Linux 3.18 alloc_vfsmnt(), whose struct mount lacks fs_pin members.
+helper_pattern = re.compile(
+    r"(?s)#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n/\* A copy of alloc_vfsmnt\(\) but allocates the fake mnt_id.*?#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n(?=\nstatic struct mount \*alloc_vfsmnt)"
+)
+helper_replacement = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+static struct mount *alloc_vfsmnt(const char *name);
+
+static struct mount *susfs_alloc_unshare_ksu_vfsmnt(const char *name, int old_mnt_id)
+{
+\tstruct mount *mnt = alloc_vfsmnt(name);
+\tif (!mnt)
+\t\treturn NULL;
+\tmnt_free_id(mnt);
+\tmnt->mnt_id = old_mnt_id;
+\treturn mnt;
+}
+
+static struct mount *susfs_alloc_non_unshare_ksu_vfsmnt(const char *name)
+{
+\tstruct mount *mnt;
+\tint fake_id = ida_simple_get(&mnt_id_ida, DEFAULT_KSU_MNT_ID, 0, GFP_KERNEL);
+\tif (fake_id < 0)
+\t\treturn NULL;
+\tmnt = alloc_vfsmnt(name);
+\tif (!mnt) {
+\t\tida_simple_remove(&mnt_id_ida, fake_id);
+\t\treturn NULL;
+\t}
+\tmnt_free_id(mnt);
+\tmnt->mnt_id = fake_id;
+\treturn mnt;
+}
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+
+"""
+mount_ns, helper_count = helper_pattern.subn(helper_replacement, mount_ns, count=1)
+if helper_count != 1:
+    raise SystemExit("Could not replace newer SUS_MOUNT mount allocators with Linux 3.18 wrappers")
+mount_ns_path.write_text(mount_ns)
+
 # Linux 3.18 fsnotify callbacks return int and carry a different callback type
 # than the 4.4-based patch; adapt the callback signatures while preserving
 # the original return semantics.
