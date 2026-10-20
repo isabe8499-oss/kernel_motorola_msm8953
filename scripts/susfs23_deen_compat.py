@@ -9,6 +9,7 @@ silently discarded.
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 
 root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
@@ -124,6 +125,80 @@ stat_source = (
     + stat_source[stat_guard_end:]
 )
 stat_path.write_text(stat_source)
+
+# The generic SUSFS inline script targets do_execveat_common(), which this
+# Linux 3.18 tree does not have. It accidentally injects execveat variables into
+# do_execve_common(). Restore this file from the checked-out kernel revision and
+# install BakaSU's documented legacy manual hooks instead.
+exec_path = root / "fs/exec.c"
+original_exec = subprocess.run(
+    ["git", "show", "HEAD:fs/exec.c"], cwd=root, check=True,
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+).stdout
+marker = """static int do_execve_common(struct filename *filename,
+				struct user_arg_ptr argv,
+				struct user_arg_ptr envp)
+{"""
+replacement = """#ifdef CONFIG_KSU_MANUAL_HOOK
+extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
+				void *argv, void *envp, int *flags);
+extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
+				void *argv, void *envp, int *flags, int *retval);
+#endif
+
+static int do_execve_common(struct filename *filename,
+				struct user_arg_ptr argv,
+				struct user_arg_ptr envp)
+{"""
+if original_exec.count(marker) != 1:
+    raise SystemExit("do_execve_common marker not unique in clean Linux 3.18 fs/exec.c")
+original_exec = original_exec.replace(marker, replacement, 1)
+old_vars = """	int retval;
+	bool is_su;
+
+	if (IS_ERR(filename))
+		return PTR_ERR(filename);"""
+new_vars = """	int retval;
+	bool is_su;
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	int ksu_fd = AT_FDCWD;
+	int ksu_flags = 0;
+#endif
+
+	if (IS_ERR(filename))
+		return PTR_ERR(filename);
+
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags);
+#endif"""
+if original_exec.count(old_vars) != 1:
+    raise SystemExit("execve local/guard block not unique; refusing BakaSU hook insertion")
+original_exec = original_exec.replace(old_vars, new_vars, 1)
+success = """	free_bprm(bprm);
+	putname(filename);
+	if (displaced)"""
+success_new = """	free_bprm(bprm);
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+#endif
+	putname(filename);
+	if (displaced)"""
+if original_exec.count(success) != 1:
+    raise SystemExit("execve success cleanup marker not unique")
+original_exec = original_exec.replace(success, success_new, 1)
+failure = """out_ret:
+	putname(filename);
+	return retval;"""
+failure_new = """out_ret:
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+#endif
+	putname(filename);
+	return retval;"""
+if original_exec.count(failure) != 1:
+    raise SystemExit("execve failure cleanup marker not unique")
+original_exec = original_exec.replace(failure, failure_new, 1)
+exec_path.write_text(original_exec)
 
 # Backport the SUSFS patch set's newer header and static-key API to Linux 3.18.
 defs = root / "include/linux/susfs_def.h"
