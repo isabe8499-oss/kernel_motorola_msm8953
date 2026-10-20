@@ -11,6 +11,7 @@ on:
       - 'Makefile'
       - 'drivers/Kconfig'
       - 'drivers/Makefile'
+      - 'fs/exec.c'
 
 permissions:
   contents: read
