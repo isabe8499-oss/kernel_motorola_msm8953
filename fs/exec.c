@@ -66,6 +66,11 @@
 
 #include <trace/events/sched.h>
 
+#ifdef CONFIG_KSU
+extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
+			       void *argv, void *envp, int *flags);
+#endif
+
 int suid_dumpable = 0;
 
 static LIST_HEAD(formats);
@@ -1502,7 +1507,15 @@ static int do_execve_common(struct filename *filename,
 	struct files_struct *displaced;
 	int retval;
 	bool is_su;
+#ifdef CONFIG_KSU
+	int fd = AT_FDCWD;
+	int flags = 0;
+#endif
 
+#ifdef CONFIG_KSU
+	/* Legacy execve path on Linux 3.18: model execveat as AT_FDCWD, flags=0. */
+	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
+#endif
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
 
