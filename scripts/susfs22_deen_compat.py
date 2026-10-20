@@ -33,7 +33,7 @@ deferred = {
     "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures differ in 3.18",
     "fs/proc/base.c.rej": "OPEN_REDIRECT integration deferred",
     "fs/proc/fd.c.rej": "SUS_MOUNT proc-fd output integration deferred",
-    "fs/proc/task_mmu.c.rej": "SUS_MAP VMA reporting hook deferred",
+    "fs/proc/task_mmu.c.rej": "SUS_MAP show_smap hunk adapted to Linux 3.18",
     "fs/readdir.c.rej": "SUS_PATH directory enumeration hook deferred",
 }
 found = {
@@ -425,6 +425,24 @@ if "susfs_is_inode_sus_path(inode)" not in rf:
     rs = rs[:r0] + rf + rs[r1:]
 rp.write_text(rs)
 
+
+# Adapt the rejected SUS_MAP smaps hunk to the Linux 3.18 show_smap layout.
+mm_path = root / "fs/proc/task_mmu.c"
+mm = mm_path.read_text()
+sm0 = mm.find("static int show_smap(")
+sm1 = mm.find("\n}", sm0)
+if sm0 < 0 or sm1 < 0:
+    raise SystemExit("Linux 3.18 show_smap not found; refusing SUS_MAP port")
+smf = mm[sm0:sm1]
+if "SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))" not in smf:
+    anchor = "\tsmaps_walk.private = mss;\n"
+    if smf.count(anchor) != 1:
+        raise SystemExit("show_smap SUS_MAP insertion anchor mismatch")
+    extra = "#ifdef CONFIG_KSU_SUSFS_SUS_MAP\n\tif (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))\n\t\treturn 0;\n#endif\n\n" + anchor
+    smf = smf.replace(anchor, extra, 1)
+    mm = mm[:sm0] + smf + mm[sm1:]
+    mm_path.write_text(mm)
+
 # Preserve every rejected hunk verbatim, then remove only the allowlisted
 # .rej files because the candidate profile explicitly disables those features.
 manifest = []
@@ -433,7 +451,14 @@ for rel, reason in deferred.items():
     dst = deferred_dir / rel
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
-    manifest.append(f"{rel}\tDEFERRED\t{reason}")
+    if rel == "fs/namei.c.rej":
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH path-walk adapted; OPEN_REDIRECT remains deferred")
+    elif rel == "fs/readdir.c.rej":
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir adapted for Linux 3.18")
+    elif rel == "fs/proc/task_mmu.c.rej":
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP show_smap hook adapted; remaining whitespace hunk irrelevant")
+    else:
+        manifest.append(f"{rel}\tDEFERRED\t{reason}")
     src.unlink()
 
 avc_rej = found.get("security/selinux/avc.c.rej")
@@ -457,12 +482,12 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 candidate profile — partial feature parity; SUS_PATH compile-tested only\n"
+    "SUSFS v2.2 Linux 3.18 candidate profile — SUS_PATH/SUS_KSTAT/SUS_MAP compile-tested only\n"
     "KSU_SUSFS_SUS_PATH=y\n"
     "KSU_SUSFS_SUS_MOUNT=n\n"
-    "KSU_SUSFS_SUS_KSTAT=n\n"
+    "KSU_SUSFS_SUS_KSTAT=y\n"
     "KSU_SUSFS_OPEN_REDIRECT=n\n"
-    "KSU_SUSFS_SUS_MAP=n\n"
+    "KSU_SUSFS_SUS_MAP=y\n"
     "KSU_SUSFS_SPOOF_UNAME=y\n"
     "KSU_SUSFS_ENABLE_LOG=y\n"
     "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y\n"
