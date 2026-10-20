@@ -453,7 +453,7 @@ if "#include <linux/susfs_def.h>" not in mount_ns:
         raise SystemExit("namespace.c SUS_MOUNT include anchor mismatch")
     mount_ns = mount_ns.replace(task_work_anchor, task_work_anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n#include <linux/susfs_def.h>\n#endif\n", 1)
 mount_anchor = "/* Maximum number of mounts in a mount namespace */"
-if "susfs_is_current_ksu_domain" not in mount_ns:
+if "extern bool susfs_is_current_ksu_domain(void);" not in mount_ns:
     defs = "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nextern bool susfs_is_current_ksu_domain(void);\nextern struct static_key susfs_is_sdcard_android_data_not_decrypted;\n#define CL_COPY_MNT_NS BIT(25)\n#endif\n\n"
     if mount_ns.count(mount_anchor) != 1:
         raise SystemExit("namespace.c SUS_MOUNT declaration anchor mismatch")
