@@ -1,0 +1,139 @@
+name: Deen BakaSU + SUSFS v2.2 Linux 3.18 candidate build
+
+on:
+  push:
+    branches:
+      - deen-bakasu-susfs22-port-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-susfs22-candidate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio patch
+
+      - name: Integrate pinned BakaSU source
+        run: |
+          set -euo pipefail
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          git init -q KernelSU
+          git -C KernelSU remote add origin https://github.com/Baka-SU/BakaSU.git
+          git -C KernelSU -c protocol.version=2 fetch --depth=1 origin "$BAKASU_COMMIT"
+          git -C KernelSU checkout --detach -q FETCH_HEAD
+          ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
+          echo "$ACTUAL_COMMIT" | tee bakasu-source-commit.txt
+          test "$ACTUAL_COMMIT" = "$BAKASU_COMMIT"
+          ln -s ../KernelSU/kernel drivers/kernelsu
+          grep -q 'kernelsu' drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+
+      - name: Download pinned SUSFS v2.2 core patch and hooks
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          CORE_COMMIT=30492fd415f12414104beb14349e83e58017dfa9
+          HOOK_COMMIT=16b6032141d284423160182577fb465e55e4925d
+          curl -fsSL "https://raw.githubusercontent.com/redmax19/build/$CORE_COMMIT/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4_v22.patch
+          curl -fsSL "https://raw.githubusercontent.com/kyzuna28/Compiler/$HOOK_COMMIT/hook%20v1/susfs_inline22.sh" -o susfs_inline22.sh
+          sha256sum /tmp/susfs_patch_to_4.4_v22.patch susfs_inline22.sh | tee artifacts/source-sha256.txt
+          printf 'BakaSU=7c383cfeef3a2ac450f2f1273dae74bd50356d31\nCore_patch=redmax19/build@%s\nHook_script=kyzuna28/Compiler@%s\n' "$CORE_COMMIT" "$HOOK_COMMIT" | tee artifacts/source-commits.txt
+
+      - name: Apply SUSFS v2.2 core patch and inline hooks
+        run: |
+          set -euo pipefail
+          set +e
+          patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4_v22.patch > artifacts/core-patch.log 2>&1
+          core_rc=$?
+          bash susfs_inline22.sh > artifacts/inline-hooks.log 2>&1
+          hook_rc=$?
+          set -e
+          printf 'core_patch_exit=%s\ninline_hooks_exit=%s\n' "$core_rc" "$hook_rc" | tee artifacts/patch-status.txt
+          test "$hook_rc" -eq 0
+
+      - name: Apply audited Linux 3.18 and BakaSU compatibility adapter
+        run: |
+          set -euo pipefail
+          python3 scripts/susfs22_deen_compat.py . artifacts
+          cat artifacts/patch-status.txt
+          cat artifacts/deferred-feature-contract.txt
+          git diff --check
+
+      - name: Configure bounded SUSFS v2.2 candidate
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out deen_defconfig
+          scripts/config --file out/.config \
+            --enable KSU \
+            --enable KSU_SUSFS \
+            --disable KSU_MANUAL_HOOK \
+            --disable KSU_TRACEPOINT_HOOK \
+            --disable KSU_SUSFS_SUS_PATH \
+            --disable KSU_SUSFS_SUS_MOUNT \
+            --disable KSU_SUSFS_SUS_KSTAT \
+            --disable KSU_SUSFS_OPEN_REDIRECT \
+            --disable KSU_SUSFS_SUS_MAP \
+            --enable KSU_SUSFS_SPOOF_UNAME \
+            --enable KSU_SUSFS_ENABLE_LOG \
+            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          make O=out olddefconfig
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_SUSFS_SPOOF_UNAME|CONFIG_KSU_SUSFS_ENABLE_LOG|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG)=' out/.config | tee artifacts/candidate-config.txt
+
+      - name: Build candidate kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          test -s out/vmlinux
+          nm out/vmlinux | grep -q 'susfs'
+          nm out/vmlinux | grep -q 'ksu_handle_sys_reboot'
+          mkdir -p artifacts/kernel
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/kernel/
+          cp out/.config artifacts/kernel.config
+          nm out/vmlinux | grep -E 'susfs|ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## SUSFS v2.2 Linux 3.18.140 candidate'
+            echo
+            echo 'This is a partial compatibility profile. SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP are disabled because their Linux 3.18 hunks did not apply cleanly. A successful compile is not device boot/runtime validation.'
+            echo
+            cat artifacts/patch-status.txt
+            echo
+            cat artifacts/deferred-feature-contract.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload candidate and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-susfs22-candidate
+          path: |
+            artifacts/
+            susfs_inline22.sh
+            scripts/susfs22_deen_compat.py
+            bakasu-source-commit.txt
+          if-no-files-found: warn
+          retention-days: 14
