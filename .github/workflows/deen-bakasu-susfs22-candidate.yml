@@ -277,25 +277,33 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path("kernel/reboot.c")
           s = p.read_text()
           marker = "ksu_handle_sys_reboot(magic1, magic2, cmd, &arg)"
           if s.count(marker) != 1:
-              raise SystemExit(f"Expected one BakaSU reboot driver-discovery call, found {s.count(marker)}")
+              raise SystemExit(f"Expected exactly one BakaSU driver-discovery call, found {s.count(marker)}")
           pos = s.index(marker)
-          guard = "#ifdef CONFIG_KSU_MANUAL_HOOK"
-          guard_pos = s.rfind(guard, 0, pos)
-          endif_pos = s.find("#endif", pos)
-          if guard_pos < 0 or endif_pos < 0:
-              raise SystemExit("Could not identify the existing guard around BakaSU reboot hook")
-          block = s[guard_pos:endif_pos]
-          if "ksu_handle_sys_reboot" not in block:
-              raise SystemExit("Existing BakaSU reboot hook is not inside the expected guard")
-          s = s[:guard_pos] + s[guard_pos:endif_pos].replace(
-              guard, "#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)", 1
-          ) + s[endif_pos:]
+          # Match either the existing MANUAL_HOOK guard or the guard produced
+          # by a previous attempt; don't depend on surrounding whitespace.
+          matches = list(re.finditer(
+              r"^[ \t]*#(?:ifdef[ \t]+CONFIG_KSU_MANUAL_HOOK|if[ \t]+defined\(CONFIG_KSU_MANUAL_HOOK\))[ \t]*$",
+              s[:pos], re.M
+          ))
+          if not matches:
+              raise SystemExit("BakaSU reboot call has no recognizable MANUAL_HOOK guard")
+          guard_match = matches[-1]
+          end_match = re.search(r"^[ \t]*#endif\b", s[pos:], re.M)
+          if not end_match:
+              raise SystemExit("Could not find closing #endif for BakaSU reboot call")
+          end_pos = pos + end_match.start()
+          segment = s[guard_match.start():end_pos]
+          if marker not in segment:
+              raise SystemExit("Nearest MANUAL_HOOK guard does not contain the reboot call")
+          replacement = "#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)"
+          s = s[:guard_match.start()] + replacement + s[guard_match.end():]
           p.write_text(s)
-          print("Updated existing BakaSU reboot hook guard for SUSFS inline mode.")
+          print("BakaSU reboot discovery guard updated for SUSFS inline mode.")
           PY
           grep -q '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' kernel/reboot.c
           grep -q 'ksu_handle_sys_reboot(magic1, magic2, cmd, &arg)' kernel/reboot.c
