@@ -1,0 +1,97 @@
+name: Deen BakaSU SUSFS 2.3 port probe (Linux 3.18)
+
+on:
+  push:
+    branches:
+      - deen-bakasu-susfs23-port-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  susfs-port-probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Deen kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install build and patch tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio patch
+
+      - name: Pin BakaSU and SUSFS sources
+        run: |
+          set -euo pipefail
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          SUSFS_PORT_COMMIT=71345ded5af28f55d76ebcdc7a9df9cea56111e1
+          INLINE_HOOK_COMMIT=dcd789634247c77d8549a42aef232c680a905585
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh "${BAKASU_COMMIT}"
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          git clone https://github.com/wxx9248/susfs4ksu.git /tmp/susfs4ksu
+          git -C /tmp/susfs4ksu checkout "${SUSFS_PORT_COMMIT}"
+          git clone https://github.com/JackA1ltman/NonGKI_Kernel_Build_2nd.git /tmp/non-gki-build
+          git -C /tmp/non-gki-build checkout "${INLINE_HOOK_COMMIT}"
+          mkdir -p artifacts
+          printf 'BakaSU=%s\nSUSFS_port=%s\ninline_hook_script=%s\n' "${BAKASU_COMMIT}" "${SUSFS_PORT_COMMIT}" "${INLINE_HOOK_COMMIT}" | tee artifacts/source-commits.txt
+
+      - name: Apply SUSFS core and Kconfig patch (capture conflicts)
+        continue-on-error: true
+        run: |
+          set +e
+          cp /tmp/susfs4ksu/kernel_patches/fs/susfs.c fs/
+          cp /tmp/susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
+          cp /tmp/susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
+          cp /tmp/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
+          (cd KernelSU && patch --batch --forward -p1 < 10_enable_susfs_for_ksu.patch) > artifacts/patch-kernelsu.log 2>&1
+          echo "KernelSU Kconfig patch exit=$?" >> artifacts/patch-status.txt
+          cp /tmp/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.9.patch .
+          patch --batch --forward -p1 < 50_add_susfs_in_kernel-4.9.patch > artifacts/patch-core-4.9.log 2>&1
+          echo "SUSFS 4.9 core patch exit=$?" >> artifacts/patch-status.txt
+          cp /tmp/non-gki-build/Patches/susfs_inline_hook_patches.sh .
+          bash susfs_inline_hook_patches.sh > artifacts/inline-hooks.log 2>&1
+          echo "3.18-capable inline hook script exit=$?" >> artifacts/patch-status.txt
+          find . -name '*.rej' -o -name '*.orig' > artifacts/rejected-files.txt
+          grep -R -n 'CONFIG_KSU_SUSFS' KernelSU/kernel/Kconfig drivers/kernelsu/Kconfig 2>/dev/null > artifacts/susfs-kconfig-symbols.txt
+          grep -R -n 'susfs_' fs security kernel drivers/input 2>/dev/null > artifacts/susfs-hook-audit.txt
+          true
+
+      - name: Decide whether the port is buildable
+        run: |
+          set -euo pipefail
+          {
+            echo '## Deen SUSFS 2.3 port probe'
+            echo
+            echo 'This is a source-compatibility probe, not a flashable build.'
+            echo 'A port is not considered ready if patch rejects remain or required SUSFS symbols/hooks are absent.'
+            echo
+            echo '### Patch status'
+            cat artifacts/patch-status.txt || true
+            echo
+            echo '### Rejected files'
+            cat artifacts/rejected-files.txt || true
+            echo
+            echo '### SUSFS config entries'
+            cat artifacts/susfs-kconfig-symbols.txt || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          test -f artifacts/patch-status.txt
+          test -f artifacts/inline-hooks.log
+
+      - name: Upload patch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-susfs23-port-diagnostics
+          path: |
+            artifacts/
+            **/*.rej
+            **/*.orig
+            susfs_inline_hook_patches.sh
+          if-no-files-found: warn
+          retention-days: 14
