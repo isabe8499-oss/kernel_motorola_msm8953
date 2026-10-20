@@ -1,0 +1,125 @@
+name: Deen SUSFS v2.2 Linux 3.18 port probe
+
+on:
+  push:
+    branches:
+      - deen-bakasu-susfs22-port-test
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  susfs22-probe:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Deen kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install probe dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git curl patch python3
+
+      - name: Integrate pinned BakaSU source
+        run: |
+          set -euo pipefail
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          git init -q KernelSU
+          git -C KernelSU remote add origin https://github.com/Baka-SU/BakaSU.git
+          git -C KernelSU -c protocol.version=2 fetch --depth=1 origin "$BAKASU_COMMIT"
+          git -C KernelSU checkout --detach -q FETCH_HEAD
+          ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
+          echo "$ACTUAL_COMMIT" > bakasu-source-commit.txt
+          test "$ACTUAL_COMMIT" = "$BAKASU_COMMIT"
+          ln -s ../KernelSU/kernel drivers/kernelsu
+          grep -q 'kernelsu' drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+
+      - name: Download pinned SUSFS v2.2 patch and hooks
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          CORE_COMMIT=30492fd415f12414104beb14349e83e58017dfa9
+          HOOK_COMMIT=16b6032141d284423160182577fb465e55e4925d
+          curl -fsSL "https://raw.githubusercontent.com/redmax19/build/$CORE_COMMIT/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4_v22.patch
+          curl -fsSL "https://raw.githubusercontent.com/kyzuna28/Compiler/$HOOK_COMMIT/hook%20v1/susfs_inline22.sh" -o susfs_inline22.sh
+          sha256sum /tmp/susfs_patch_to_4.4_v22.patch susfs_inline22.sh | tee artifacts/source-sha256.txt
+          printf 'BakaSU=7c383cfeef3a2ac450f2f1273dae74bd50356d31\nCore_patch=redmax19/build@%s\nHook_script=kyzuna28/Compiler@%s\nCore_base=Linux 4.4; probe_target=Linux 3.18.140\n' "$CORE_COMMIT" "$HOOK_COMMIT" | tee artifacts/source-commits.txt
+          grep -n 'SUSFS_VERSION "v2.2.0"' /tmp/susfs_patch_to_4.4_v22.patch
+
+      - name: Apply SUSFS v2.2 core patch (record rejects, do not hide them)
+        run: |
+          set +e
+          patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4_v22.patch > artifacts/core-patch.log 2>&1
+          rc=$?
+          echo "core_patch_exit=$rc" | tee artifacts/patch-status.txt
+          exit 0
+
+      - name: Apply SUSFS v2.2 legacy inline hooks
+        run: |
+          set +e
+          bash susfs_inline22.sh > artifacts/inline-hooks.log 2>&1
+          rc=$?
+          echo "inline_hooks_exit=$rc" | tee -a artifacts/patch-status.txt
+          exit 0
+
+      - name: Collect compatibility evidence
+        if: always()
+        run: |
+          set +e
+          mkdir -p artifacts/rejected-hunks
+          find . -path './.git' -prune -o -path './artifacts' -prune -o -path './KernelSU/.git' -prune -o -type f -name '*.rej' -print | sort > artifacts/live-rejected-files.txt
+          find . -path './.git' -prune -o -path './artifacts' -prune -o -path './KernelSU/.git' -prune -o -type f -name '*.orig' -print | sort > artifacts/original-files.txt
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            mkdir -p "artifacts/rejected-hunks/$(dirname "$file")"
+            cp "$file" "artifacts/rejected-hunks/$file"
+          done < artifacts/live-rejected-files.txt
+          grep -R -n '^#define SUSFS_VERSION' include/linux/susfs.h > artifacts/susfs-version.txt 2>&1
+          grep -n 'PATCH_LEVEL\|Tested kernel versions' susfs_inline22.sh > artifacts/hook-version.txt 2>&1
+          grep -n 'config KSU_SUSFS' drivers/kernelsu/Kconfig > artifacts/susfs-kconfig.txt 2>&1
+          git diff --check > artifacts/diff-check.log 2>&1
+          echo "diff_check_exit=$?" >> artifacts/patch-status.txt
+          git diff --stat > artifacts/diff-stat.txt 2>&1
+          git status --short > artifacts/git-status.txt 2>&1
+          git diff > artifacts/kernel-diff.patch 2>/dev/null
+          {
+            echo '## Deen SUSFS v2.2 Linux 3.18 compatibility probe'
+            echo
+            echo 'Diagnostic-only run. It applies a v2.2 core patch based on a Linux 4.4 patch set plus a legacy inline-hook script that declares 3.18 among tested versions. It does not compile a kernel, make a flash ZIP, or claim boot compatibility.'
+            echo
+            echo '### Patch status'
+            cat artifacts/patch-status.txt
+            echo
+            echo '### Reported SUSFS version'
+            cat artifacts/susfs-version.txt
+            echo
+            echo '### Hook script version'
+            cat artifacts/hook-version.txt
+            echo
+            echo '### Rejected hunks'
+            cat artifacts/live-rejected-files.txt
+            echo
+            echo '### Diff summary'
+            cat artifacts/diff-stat.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Upload SUSFS v2.2 diagnostic artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-susfs22-port-probe
+          path: |
+            artifacts/
+            susfs_inline22.sh
+            bakasu-source-commit.txt
+          if-no-files-found: warn
+          retention-days: 14
