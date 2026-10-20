@@ -110,7 +110,10 @@ bakasu_source.write_text(source_text)
 for rel in ("fs/open.c", "fs/stat.c", "fs/exec.c"):
     path = root / rel
     text = path.read_text()
+    text = text.replace("extern struct static_key_true ksu_su_compat_enabled;", "extern bool ksu_su_compat_enabled;")
     text = text.replace("extern struct static_key ksu_su_compat_enabled;", "extern bool ksu_su_compat_enabled;")
+    text = text.replace("static_branch_likely(&ksu_su_compat_enabled)", "ksu_su_compat_enabled")
+    text = text.replace("static_branch_unlikely(&ksu_su_compat_enabled)", "ksu_su_compat_enabled")
     text = text.replace("static_key_enabled(&ksu_su_compat_enabled)", "ksu_su_compat_enabled")
     path.write_text(text)
 
@@ -135,6 +138,7 @@ static_key_paths = [
     "fs/susfs.c",
     "kernel/sys.c",
     "fs/proc/cmdline.c",
+    "fs/proc_namespace.c",
     "security/selinux/avc.c",
     "fs/namespace.c",
     "fs/super.c",
@@ -210,7 +214,7 @@ rw_lines = rw.read_text().splitlines()
 rw.write_text("\n".join(line.rstrip() if not line.strip() else line for line in rw_lines) + "\n")
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.3 Linux 3.18 candidate profile — NOT full feature parity\n"
+    "SUSFS v2.2 Linux 3.18 candidate profile — NOT full feature parity\n"
     "KSU_SUSFS_SUS_PATH=n\n"
     "KSU_SUSFS_SUS_MOUNT=n\n"
     "KSU_SUSFS_SUS_KSTAT=n\n"
