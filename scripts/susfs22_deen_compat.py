@@ -110,9 +110,9 @@ bakasu_source.write_text(source_text)
 # those two checks on the same compatibility macro used by the rest of BakaSU.
 source_text = bakasu_source.read_text()
 for fn in ("ksu_handle_faccessat", "ksu_handle_stat"):
-    start_marker = "#if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\\nint " + fn + "("
+    start_marker = "#if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\nint " + fn + "("
     start = source_text.find(start_marker)
-    end_marker = "\\n#else\\nint " + fn + "("
+    end_marker = "\n#else\nint " + fn + "("
     end = source_text.find(end_marker, start)
     if start < 0 or end < 0:
         raise SystemExit(f"Cannot locate versioned SUSFS handler for {fn}")
