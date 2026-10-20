@@ -77,6 +77,29 @@ if label.strip() not in source:
     source = source[:func_start] + func + source[func_end:]
     avc.write_text(source)
 
+# The inline hook script injects a newer-kernel faccessat path using getname_flags()
+# and a 4.4 filename_lookup() signature. Linux 3.18 does not expose that API.
+# Keep the original user_path_at() path active unless SUS_PATH is enabled; our
+# current partial profile explicitly disables SUS_PATH until its lookup hooks
+# are ported to this tree.
+const open = root / "fs/open.c"
+open_source = open.read_text()
+token = "fname = getname_flags(filename, lookup_flags, NULL);"
+if open_source.count(token) != 1:
+    raise SystemExit("Expected exactly one SUSFS legacy faccessat injected block; refusing compatibility edit")
+token_pos = open_source.index(token)
+guard_pos = open_source.rfind("#ifdef CONFIG_KSU_SUSFS", 0, token_pos)
+if guard_pos < 0:
+    raise SystemExit("Could not find the SUSFS guard for the injected faccessat block")
+guard_end = guard_pos + len("#ifdef CONFIG_KSU_SUSFS")
+between = open_source[guard_end:token_pos]
+if between.count("\n") > 4 or between.strip():
+    raise SystemExit("The SUSFS guard is not immediately associated with getname_flags; refusing compatibility edit")
+open_source = open_source[:guard_pos] + open_source[guard_pos:guard_end].replace(
+    "#ifdef CONFIG_KSU_SUSFS", "#ifdef CONFIG_KSU_SUSFS_SUS_PATH", 1
+) + open_source[guard_end:]
+open.write_text(open_source)
+
 # Backport the SUSFS patch set's newer header and static-key API to Linux 3.18.
 defs = root / "include/linux/susfs_def.h"
 defs_source = defs.read_text()
