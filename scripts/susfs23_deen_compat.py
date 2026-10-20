@@ -58,9 +58,23 @@ anchor = "\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"
 if source.count("goto bypass_orig_flow;") < 1:
     raise SystemExit("AVC patch has no bypass_orig_flow goto; source differs from audited patch")
 if label.strip() not in source:
-    if source.count(anchor) != 1:
-        raise SystemExit("AVC label insertion anchor not unique; refusing unsafe edit")
-    source = source.replace(anchor, label + anchor, 1)
+    func_start = source.find("static void avc_dump_query(")
+    if func_start < 0:
+        raise SystemExit("avc_dump_query was not found; refusing unsafe edit")
+    func_end = source.find("\n}", func_start)
+    if func_end < 0:
+        raise SystemExit("avc_dump_query closing brace was not found; refusing unsafe edit")
+    func = source[func_start:func_end]
+    anchors = [
+        "\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));",
+        "\tBUG_ON(tclass >= ARRAY_SIZE(secclass_map));",
+    ]
+    matches = [candidate for candidate in anchors if func.count(candidate) == 1]
+    if len(matches) != 1:
+        raise SystemExit("AVC label insertion anchor is not unique inside avc_dump_query; refusing unsafe edit")
+    target = matches[0]
+    func = func.replace(target, label + target, 1)
+    source = source[:func_start] + func + source[func_end:]
     avc.write_text(source)
 
 # Preserve every rejected hunk verbatim, then remove only the allowlisted
