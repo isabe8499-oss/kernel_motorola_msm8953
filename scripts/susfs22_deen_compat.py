@@ -29,10 +29,10 @@ deferred_dir.mkdir(parents=True, exist_ok=True)
 # allowlisted candidate profile; review the source hunks before changing this.
 deferred = {
     "fs/namei.c.rej": "SUS_PATH adapted to Linux 3.18; OPEN_REDIRECT remains deferred",
-    "fs/namespace.c.rej": "SUS_MOUNT requires Linux 3.18 mount namespace adaptation",
-    "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures differ in 3.18",
+    "fs/namespace.c.rej": "SUS_MOUNT namespace declarations adapted for Linux 3.18",
+    "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures and inode spoof adapted for Linux 3.18",
     "fs/proc/base.c.rej": "OPEN_REDIRECT integration deferred",
-    "fs/proc/fd.c.rej": "SUS_MOUNT proc-fd output integration deferred",
+    "fs/proc/fd.c.rej": "SUS_MOUNT proc-fd output adapted for Linux 3.18",
     "fs/proc/task_mmu.c.rej": "SUS_MAP show_smap hunk adapted to Linux 3.18",
     "fs/readdir.c.rej": "SUS_PATH directory enumeration hook deferred",
 }
@@ -443,6 +443,174 @@ if "SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))" not in smf:
     mm = mm[:sm0] + smf + mm[sm1:]
     mm_path.write_text(mm)
 
+
+# Linux 3.18 SUS_MOUNT compatibility: restore the rejected namespace declarations.
+mount_ns_path = root / "fs/namespace.c"
+mount_ns = mount_ns_path.read_text()
+task_work_anchor = "#include <linux/task_work.h>\n"
+if "#include <linux/susfs_def.h>" not in mount_ns:
+    if mount_ns.count(task_work_anchor) != 1:
+        raise SystemExit("namespace.c SUS_MOUNT include anchor mismatch")
+    mount_ns = mount_ns.replace(task_work_anchor, task_work_anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n#include <linux/susfs_def.h>\n#endif\n", 1)
+mount_anchor = "/* Maximum number of mounts in a mount namespace */"
+if "susfs_is_current_ksu_domain" not in mount_ns:
+    defs = "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nextern bool susfs_is_current_ksu_domain(void);\nextern struct static_key susfs_is_sdcard_android_data_not_decrypted;\n#define CL_COPY_MNT_NS BIT(25)\n#endif\n\n"
+    if mount_ns.count(mount_anchor) != 1:
+        raise SystemExit("namespace.c SUS_MOUNT declaration anchor mismatch")
+    mount_ns = mount_ns.replace(mount_anchor, defs + mount_anchor, 1)
+mount_ns_path.write_text(mount_ns)
+
+# Linux 3.18 fsnotify callbacks return int and carry a different callback type
+# than the 4.4-based patch; adapt the callback signatures while preserving
+# the original return semantics.
+fdinfo_path = root / "fs/notify/fdinfo.c"
+fi = fdinfo_path.read_text()
+if "#include <linux/slab.h>" not in fi:
+    include_anchor = "#include <linux/seq_file.h>\n"
+    if fi.count(include_anchor) != 1:
+        raise SystemExit("fdinfo.c slab include anchor mismatch")
+    fi = fi.replace(include_anchor, "#include <linux/slab.h>\n" + include_anchor, 1)
+if "#include <linux/susfs_def.h>" not in fi:
+    include_anchor = "#include <linux/exportfs.h>\n"
+    if fi.count(include_anchor) != 1:
+        raise SystemExit("fdinfo.c SUSFS include anchor mismatch")
+    fi = fi.replace(include_anchor, include_anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n#include <linux/susfs_def.h>\n#endif\n", 1)
+
+old_show_sig = "static int show_fdinfo(struct seq_file *m, struct file *f,\n\t\t       int (*show)(struct seq_file *m, struct fsnotify_mark *mark))"
+new_show_sig = "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nstatic int show_fdinfo(struct seq_file *m, struct file *f,\n\t\t       int (*show)(struct seq_file *m, struct fsnotify_mark *mark, struct file *file))\n#else\n" + old_show_sig + "\n#endif"
+if "int (*show)(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)" not in fi:
+    if fi.count(old_show_sig) != 1:
+        raise SystemExit("fdinfo.c show_fdinfo signature anchor mismatch")
+    fi = fi.replace(old_show_sig, new_show_sig, 1)
+old_call = "\t\tret = show(m, mark);"
+new_call = "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n\t\tret = show(m, mark, f);\n#else\n\t\tret = show(m, mark);\n#endif"
+if "ret = show(m, mark, f);" not in fi:
+    if fi.count(old_call) != 1:
+        raise SystemExit("fdinfo.c callback invocation anchor mismatch")
+    fi = fi.replace(old_call, new_call, 1)
+
+old_inotify_sig = "static int inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)"
+new_inotify_sig = "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nstatic int inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n#else\n" + old_inotify_sig + "\n#endif"
+if "static int inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)" not in fi:
+    if fi.count(old_inotify_sig) != 1:
+        raise SystemExit("fdinfo.c inotify_fdinfo signature anchor mismatch")
+    fi = fi.replace(old_inotify_sig, new_inotify_sig, 1)
+
+old_fanotify_sig = "static int fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)"
+new_fanotify_sig = "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nstatic int fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n#else\n" + old_fanotify_sig + "\n#endif"
+if "static int fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)" not in fi:
+    if fi.count(old_fanotify_sig) != 1:
+        raise SystemExit("fdinfo.c fanotify_fdinfo signature anchor mismatch")
+    fi = fi.replace(old_fanotify_sig, new_fanotify_sig, 1)
+    fi = fi.replace("static int fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n#else\n" + old_fanotify_sig + "\n#endif\n{",
+                    "static int fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n#else\n" + old_fanotify_sig + "\n#endif\n{\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n\t(void)file;\n#endif", 1)
+
+# Insert the mount-path spoof in the inode-mark branch; use Linux 3.18's int
+# callback and avoid newer VFS callback signatures.
+inotify_anchor = "\tinode = igrab(mark->i.inode);\n\tif (inode) {\n"
+if "susfs_is_current_proc_umounted()" not in fi:
+    mount_code = """\t\t#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+\t\t{
+\t\t\tstruct mount *mnt = real_mount(file->f_path.mnt);
+\t\t\tif (mnt->mnt_id >= DEFAULT_KSU_MNT_ID && likely(susfs_is_current_proc_umounted())) {
+\t\t\t\tchar *pathname = kmalloc(PAGE_SIZE, GFP_KERNEL);
+\t\t\t\tif (pathname) {
+\t\t\t\t\tchar *dpath = d_path(&file->f_path, pathname, PAGE_SIZE);
+\t\t\t\t\tstruct path path;
+\t\t\t\t\tif (!IS_ERR_OR_NULL(dpath) && !kern_path(dpath, 0, &path)) {
+\t\t\t\t\t\tif (path.dentry->d_inode) {
+\t\t\t\t\t\t\tseq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:%x ",
+\t\t\t\t\t\t\t\tinode_mark->wd, path.dentry->d_inode->i_ino,
+\t\t\t\t\t\t\t\tpath.dentry->d_inode->i_sb->s_dev,
+\t\t\t\t\t\t\t\tmark->mask & IN_ALL_EVENTS, mark->ignored_mask);
+\t\t\t\t\t\t\tshow_mark_fhandle(m, path.dentry->d_inode);
+\t\t\t\t\t\t\tseq_putc(m, '\\\\n');
+\t\t\t\t\t\t\tpath_put(&path);
+\t\t\t\t\t\t\tkfree(pathname);
+\t\t\t\t\t\t\tiput(inode);
+\t\t\t\t\t\t\treturn 0;
+\t\t\t\t\t\t}
+\t\t\t\t\t\tpath_put(&path);
+\t\t\t\t\t}
+\t\t\t\t\tkfree(pathname);
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t\t#endif
+"""
+    if fi.count(inotify_anchor) != 1:
+        raise SystemExit("fdinfo.c inotify mount spoof insertion anchor mismatch")
+    fi = fi.replace(inotify_anchor, inotify_anchor + mount_code, 1)
+fdinfo_path.write_text(fi)
+
+# The core patch already applies proc/fd declarations; adapt its rejected seq_show
+# hunk to Linux 3.18's conditional body.
+procfd_path = root / "fs/proc/fd.c"
+pf = procfd_path.read_text()
+if "#include <linux/slab.h>" not in pf:
+    include_anchor = "#include <linux/seq_file.h>\n"
+    if pf.count(include_anchor) != 1:
+        raise SystemExit("proc/fd.c slab include anchor mismatch")
+    pf = pf.replace(include_anchor, "#include <linux/slab.h>\n" + include_anchor, 1)
+if "#include <linux/susfs_def.h>" not in pf:
+    include_anchor = "#include <linux/proc_fs.h>\n"
+    if pf.count(include_anchor) != 1:
+        raise SystemExit("proc/fd.c SUSFS include anchor mismatch")
+    pf = pf.replace(include_anchor, include_anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n#include <linux/susfs_def.h>\n#endif\n", 1)
+if "extern int susfs_get_non_sus_mnt_id_from_mnt" not in pf:
+    include_anchor = '#include "fd.h"\n'
+    if pf.count(include_anchor) != 1:
+        raise SystemExit("proc/fd.c SUSFS mount prototype anchor mismatch")
+    pf = pf.replace(include_anchor, include_anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nextern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);\n#endif\n", 1)
+if "struct mount *mnt = NULL;" not in pf:
+    task_anchor = "\tstruct task_struct *task;\n"
+    if pf.count(task_anchor) != 1:
+        raise SystemExit("proc/fd.c mount variable anchor mismatch")
+    pf = pf.replace(task_anchor, task_anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n\tstruct mount *mnt = NULL;\n#endif\n", 1)
+
+old_print = '\t\tseq_printf(m, "pos:\\t%lli\\nflags:\\t0%o\\nmnt_id:\\t%i\\n",\n\t\t\t   (long long)file->f_pos, f_flags,\n\t\t\t   real_mount(file->f_path.mnt)->mnt_id);'
+new_print = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+\t\tmnt = real_mount(file->f_path.mnt);
+\t\tif (mnt->mnt_id >= DEFAULT_KSU_MNT_ID && likely(susfs_is_current_proc_umounted())) {
+\t\t\tstruct path path;
+\t\t\tchar *pathname = kmalloc(PAGE_SIZE, GFP_KERNEL);
+\t\t\tif (!pathname) {
+\t\t\t\tgoto orig_flow;
+\t\t\t}
+\t\t\t{
+\t\t\t\tchar *dpath = d_path(&file->f_path, pathname, PAGE_SIZE);
+\t\t\t\tif (IS_ERR_OR_NULL(dpath) || kern_path(dpath, 0, &path)) {
+\t\t\t\t\tkfree(pathname);
+\t\t\t\t\tgoto orig_flow;
+\t\t\t\t}
+\t\t\t}
+\t\t\tif (!path.dentry->d_inode) {
+\t\t\t\tpath_put(&path);
+\t\t\t\tkfree(pathname);
+\t\t\t\tgoto orig_flow;
+\t\t\t}
+\t\t\tseq_printf(m, "pos:\\\\t%lli\\\\nflags:\\\\t0%o\\\\nmnt_id:\\\\t%i\\\\nino:\\\\t%lu\\\\n",
+\t\t\t\t(long long)file->f_pos, f_flags,
+\t\t\t\tsusfs_get_non_sus_mnt_id_from_mnt(mnt),
+\t\t\t\tpath.dentry->d_inode->i_ino);
+\t\t\tpath_put(&path);
+\t\t\tkfree(pathname);
+\t\t\tgoto bypass_orig_flow;
+\t\t}
+orig_flow:
+\t\tseq_printf(m, "pos:\\\\t%lli\\\\nflags:\\\\t0%o\\\\nmnt_id:\\\\t%i\\\\nino:\\\\t%lu\\\\n",
+\t\t\t(long long)file->f_pos, f_flags,
+\t\t\treal_mount(file->f_path.mnt)->mnt_id, file_inode(file)->i_ino);
+bypass_orig_flow:
+#else
+""" + old_print + """
+#endif"""
+if "susfs_get_non_sus_mnt_id_from_mnt(mnt)" not in pf:
+    if pf.count(old_print) != 1:
+        raise SystemExit("proc/fd.c seq_show output anchor mismatch")
+    pf = pf.replace(old_print, new_print, 1)
+procfd_path.write_text(pf)
+
 # Preserve every rejected hunk verbatim, then remove only the allowlisted
 # .rej files because the candidate profile explicitly disables those features.
 manifest = []
@@ -455,6 +623,12 @@ for rel, reason in deferred.items():
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH path-walk adapted; OPEN_REDIRECT remains deferred")
     elif rel == "fs/readdir.c.rej":
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir adapted for Linux 3.18")
+    elif rel == "fs/namespace.c.rej":
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT namespace declarations adapted for Linux 3.18")
+    elif rel == "fs/notify/fdinfo.c.rej":
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT fdinfo callbacks adapted for Linux 3.18")
+    elif rel == "fs/proc/fd.c.rej":
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd spoof adapted for Linux 3.18")
     elif rel == "fs/proc/task_mmu.c.rej":
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP show_smap hook adapted; remaining whitespace hunk irrelevant")
     else:
@@ -482,9 +656,9 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 candidate profile — SUS_PATH/SUS_KSTAT/SUS_MAP compile-tested only\n"
+    "SUSFS v2.2 Linux 3.18 candidate profile — SUS_PATH/SUS_MOUNT/SUS_KSTAT/SUS_MAP compile-tested only\n"
     "KSU_SUSFS_SUS_PATH=y\n"
-    "KSU_SUSFS_SUS_MOUNT=n\n"
+    "KSU_SUSFS_SUS_MOUNT=y\n"
     "KSU_SUSFS_SUS_KSTAT=y\n"
     "KSU_SUSFS_OPEN_REDIRECT=n\n"
     "KSU_SUSFS_SUS_MAP=y\n"
