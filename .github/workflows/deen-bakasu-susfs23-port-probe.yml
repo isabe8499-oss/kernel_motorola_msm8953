@@ -41,47 +41,59 @@ jobs:
           mkdir -p artifacts
           printf 'BakaSU=%s\nSUSFS_port=%s\ninline_hook_script=%s\n' "${BAKASU_COMMIT}" "${SUSFS_PORT_COMMIT}" "${INLINE_HOOK_COMMIT}" | tee artifacts/source-commits.txt
 
-      - name: Apply SUSFS core and Kconfig patch (capture conflicts)
+      - name: Apply SUSFS patches and capture conflicts
         continue-on-error: true
         run: |
           set +e
           cp /tmp/susfs4ksu/kernel_patches/fs/susfs.c fs/
           cp /tmp/susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
           cp /tmp/susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/
-          cp /tmp/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
-          (cd KernelSU && patch --batch --forward -p1 < 10_enable_susfs_for_ksu.patch) > artifacts/patch-kernelsu.log 2>&1
-          echo "KernelSU Kconfig patch exit=$?" >> artifacts/patch-status.txt
+          if [ -f /tmp/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
+            cp /tmp/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch /tmp/10_enable_susfs_for_ksu.patch
+            (cd KernelSU && patch --batch --forward -p1 < /tmp/10_enable_susfs_for_ksu.patch) > artifacts/patch-kernelsu.log 2>&1
+            echo "KernelSU glue patch exit=$?" >> artifacts/patch-status.txt
+          else
+            echo "KernelSU glue patch MISSING in pinned SUSFS tree; not applied" | tee artifacts/patch-kernelsu.log
+            echo "KernelSU glue patch missing" >> artifacts/patch-status.txt
+          fi
           cp /tmp/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.9.patch .
           patch --batch --forward -p1 < 50_add_susfs_in_kernel-4.9.patch > artifacts/patch-core-4.9.log 2>&1
           echo "SUSFS 4.9 core patch exit=$?" >> artifacts/patch-status.txt
           cp /tmp/non-gki-build/Patches/susfs_inline_hook_patches.sh .
           bash susfs_inline_hook_patches.sh > artifacts/inline-hooks.log 2>&1
           echo "3.18-capable inline hook script exit=$?" >> artifacts/patch-status.txt
-          find . -name '*.rej' -o -name '*.orig' > artifacts/rejected-files.txt
+          find . \( -name '*.rej' -o -name '*.orig' \) -print > artifacts/rejected-files.txt
           grep -R -n 'CONFIG_KSU_SUSFS' KernelSU/kernel/Kconfig drivers/kernelsu/Kconfig 2>/dev/null > artifacts/susfs-kconfig-symbols.txt
           grep -R -n 'susfs_' fs security kernel drivers/input 2>/dev/null > artifacts/susfs-hook-audit.txt
           true
 
-      - name: Decide whether the port is buildable
+      - name: Reject incomplete port
+        if: always()
         run: |
           set -euo pipefail
           {
-            echo '## Deen SUSFS 2.3 port probe'
+            echo '## SUSFS 2.3 compatibility gate'
             echo
-            echo 'This is a source-compatibility probe, not a flashable build.'
-            echo 'A port is not considered ready if patch rejects remain or required SUSFS symbols/hooks are absent.'
+            echo 'This workflow is diagnostic only and does not produce a flashable kernel.'
             echo
             echo '### Patch status'
             cat artifacts/patch-status.txt || true
             echo
             echo '### Rejected files'
             cat artifacts/rejected-files.txt || true
-            echo
-            echo '### SUSFS config entries'
-            cat artifacts/susfs-kconfig-symbols.txt || true
           } >> "$GITHUB_STEP_SUMMARY"
-          test -f artifacts/patch-status.txt
-          test -f artifacts/inline-hooks.log
+          if grep -q 'MISSING\|exit=1' artifacts/patch-status.txt; then
+            echo 'SUSFS port is incomplete: missing glue patch or failed patch command.'
+            exit 1
+          fi
+          if [ -s artifacts/rejected-files.txt ]; then
+            echo 'SUSFS port is incomplete: rejected hunks remain.'
+            exit 1
+          fi
+          if ! grep -q 'CONFIG_KSU_SUSFS' artifacts/susfs-kconfig-symbols.txt; then
+            echo 'SUSFS config integration was not found.'
+            exit 1
+          fi
 
       - name: Upload patch diagnostics
         if: always()
