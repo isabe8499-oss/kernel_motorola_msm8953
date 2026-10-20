@@ -193,12 +193,12 @@ bakasu_source.write_text(source_text)
 # values and is already wired by its own setuid hook; remove the mismatched call.
 security_text = security_path.read_text()
 security_text, setuid_call_count = re.subn(
-    r"(?m)^\\s*ksu_handle_setuid\\(new, old\\);\\s*\\n",
+    r"(?m)^\s*ksu_handle_setuid\(new, old\);\s*\n",
     "",
     security_text,
 )
 security_text, setuid_decl_count = re.subn(
-    r"(?m)^\\s*extern int ksu_handle_setuid\\(struct cred \\*new, const struct cred \\*old\\);\\s*\\n",
+    r"(?m)^\s*extern int ksu_handle_setuid\(struct cred \*new, const struct cred \*old\);\s*\n",
     "",
     security_text,
 )
