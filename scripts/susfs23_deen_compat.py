@@ -31,7 +31,7 @@ deferred = {
 found = {
     p.relative_to(root).as_posix(): p
     for p in root.rglob("*.rej")
-    if ".git" not in p.parts
+    if ".git" not in p.parts and artifacts not in p.parents
 }
 unknown = sorted(set(found) - set(deferred) - {"security/selinux/avc.c.rej"})
 missing = sorted(set(deferred) - set(found))
@@ -73,6 +73,14 @@ if avc_rej:
     avc_rej.unlink()
     manifest.append("security/selinux/avc.c.rej\tMANUALLY_ADAPTED\tAdded required bypass_orig_flow label at the 3.18 AVC flow")
 
+# Normalize only whitespace artifacts introduced by the pinned patch/script.
+ns = root / "fs/namespace.c"
+ns_data = ns.read_text()
+ns.write_text(ns_data.rstrip() + "\n")
+rw = root / "fs/read_write.c"
+rw_lines = rw.read_text().splitlines()
+rw.write_text("\n".join(line.rstrip() if not line.strip() else line for line in rw_lines) + "\n")
+
 (artifacts / "deferred-feature-contract.txt").write_text(
     "SUSFS v2.3 Linux 3.18 candidate profile — NOT full feature parity\n"
     "KSU_SUSFS_SUS_PATH=n\n"
@@ -96,7 +104,7 @@ if avc_rej:
 left = [
     p.relative_to(root).as_posix()
     for p in root.rglob("*.rej")
-    if ".git" not in p.parts
+    if ".git" not in p.parts and artifacts not in p.parents
 ]
 if left:
     raise SystemExit("Rejects remain after explicit disposition: " + ", ".join(left))
