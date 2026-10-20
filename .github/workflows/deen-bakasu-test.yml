@@ -262,13 +262,13 @@ jobs:
           set -euo pipefail
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
-          make O=out -j"$(nproc)" Image.gz dtbs
-          test -s out/arch/arm64/boot/Image.gz
+          make O=out -j"$(nproc)" Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
           # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
           nm out/vmlinux | grep -q ksu_handle_sys_reboot
           mkdir -p artifacts
-          cp out/arch/arm64/boot/Image.gz artifacts/
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/
           cp out/.config artifacts/kernel.config
           nm out/vmlinux | grep -E 'ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/bakasu-symbols.txt
           find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
