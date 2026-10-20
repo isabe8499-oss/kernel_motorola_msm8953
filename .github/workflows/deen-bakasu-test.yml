@@ -193,9 +193,63 @@ jobs:
           #endif
 
           \t/* We only trust the superuser with rebooting the system. */""", "sys_reboot")
+          # Add BakaSU stat return hooks required by its compile-time checker.
+          patch_once("fs/stat.c",
+          """SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          \treturn error;
+          }""",
+          """SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \textern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
+          \tksu_handle_newfstat_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }""", "newfstat_ret")
+
+          patch_once("fs/stat.c",
+          """SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          \treturn error;
+          }""",
+          """SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \textern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);
+          \tksu_handle_fstat64_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }""", "fstat64_ret")
           PY
           grep -q 'ksu_handle_faccessat' fs/open.c
           grep -q 'ksu_handle_stat' fs/stat.c
+          grep -q 'ksu_handle_newfstat_ret' fs/stat.c
+          grep -q 'ksu_handle_fstat64_ret' fs/stat.c
           grep -q 'ksu_handle_vfs_read' fs/read_write.c
           grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
 
@@ -206,7 +260,10 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           make O=out deen_defconfig
           grep -q 'config KSU_MANUAL_HOOK' drivers/kernelsu/Kconfig
-          scripts/config --file out/.config --enable KSU --enable KSU_MANUAL_HOOK
+          scripts/config --file out/.config --enable KSU --enable KSU_MANUAL_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
           make O=out olddefconfig
           grep -E '^(CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK)=' out/.config
           grep -q '^CONFIG_KSU=y$' out/.config
