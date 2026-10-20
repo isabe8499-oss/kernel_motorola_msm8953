@@ -87,7 +87,7 @@ jobs:
           {
             echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
             echo
-            echo 'Diagnostic control profile: BakaSU enabled, SUSFS completely disabled. This isolates SUSFS as a potential bootloop trigger; build success is not device boot/runtime validation.'
+            echo 'Diagnostic control profile: base Deen kernel + BakaSU, compiled with GCC 4.9. No SUSFS patches are applied. This isolates the additional root/SUSFS changes; build success is not device boot/runtime validation.'
             echo
             cat artifacts/patch-status.txt
             echo
@@ -128,7 +128,7 @@ jobs:
           GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
           Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
           This package uses the successfully compiled candidate kernel only.
-          Diagnostic control build: BakaSU is enabled but all SUSFS features are disabled to isolate whether the partial SUSFS integration causes the bootloop. This package is not a SUSFS build.
+          Diagnostic control build: base Deen kernel plus BakaSU, using GCC 4.9. No SUSFS patches/features are included; this is not the final SUSFS package.
           Successful compilation does not prove boot/runtime compatibility.
           Keep a known-good boot image and recovery access before testing.
           NOTE
@@ -146,8 +146,6 @@ jobs:
           name: deen-linux-3.18.140-bakasu-gcc49-control
           path: |
             artifacts/
-            susfs_inline22.sh
-            scripts/susfs22_deen_compat.py
             bakasu-source-commit.txt
           if-no-files-found: warn
           retention-days: 14
