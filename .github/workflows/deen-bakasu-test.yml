@@ -245,13 +245,135 @@ jobs:
           make O=out deen_defconfig
           grep -q 'config KSU_MANUAL_HOOK' drivers/kernelsu/Kconfig
           scripts/config --file out/.config --enable KSU --enable KSU_MANUAL_HOOK \
+            --disable KSU_TRACEPOINT_HOOK \
+            --disable KSU_SUSFS \
             --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
             --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
             --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
           make O=out olddefconfig
-          grep -E '^(CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK)=' out/.config
-          grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK|CONFIG_KSU_TRACEPOINT_HOOK|CONFIG_KSU_SUSFS)=' out/.config || true
+          grep -q '^CONFIG_KSU=y
+
+      - name: Build BakaSU test kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz dtbs
+          test -s out/arch/arm64/boot/Image.gz
+          test -s out/vmlinux
+          # Runtime driver discovery depends on the reboot supercall hook being
+          # in the linked kernel, not just on the Kconfig option being present.
+          nm out/vmlinux | grep -q 'ksu_handle_sys_reboot'
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz artifacts/
+          cp out/.config artifacts/kernel.config
+          nm out/vmlinux | grep -E 'ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/bakasu-symbols.txt
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## BakaSU manual-hook test'
+            echo 'Build completed with CONFIG_KSU=y, CONFIG_KSU_MANUAL_HOOK=y, and CONFIG_KSU_TRACEPOINT_HOOK disabled. Linked-kernel symbol check verifies the reboot supercall hook exists.'
+            echo 'This verifies configuration, compilation, and linked-symbol presence only; device boot/runtime validation is still required.'
+            echo 'SUSFS is deliberately not enabled: upstream BakaSU documents SUSFS backports for kernel 4.3+, while this target is Linux 3.18.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload BakaSU test artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-manual-hook-test
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
+ out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y
+
+      - name: Build BakaSU test kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz dtbs
+          test -s out/arch/arm64/boot/Image.gz
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz artifacts/
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## BakaSU manual-hook test'
+            echo 'Build completed with CONFIG_KSU=y and CONFIG_KSU_MANUAL_HOOK=y.'
+            echo 'This verifies compilation only; device boot/runtime validation is still required.'
+            echo 'SUSFS is deliberately not enabled: upstream BakaSU documents SUSFS backports for kernel 4.3+, while this target is Linux 3.18.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload BakaSU test artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-manual-hook-test
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
+ out/.config
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set
+
+      - name: Build BakaSU test kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz dtbs
+          test -s out/arch/arm64/boot/Image.gz
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz artifacts/
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## BakaSU manual-hook test'
+            echo 'Build completed with CONFIG_KSU=y and CONFIG_KSU_MANUAL_HOOK=y.'
+            echo 'This verifies compilation only; device boot/runtime validation is still required.'
+            echo 'SUSFS is deliberately not enabled: upstream BakaSU documents SUSFS backports for kernel 4.3+, while this target is Linux 3.18.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload BakaSU test artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-manual-hook-test
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
+ out/.config
+          grep -q '^# CONFIG_KSU_SUSFS is not set
+
+      - name: Build BakaSU test kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          make O=out -j"$(nproc)" Image.gz dtbs
+          test -s out/arch/arm64/boot/Image.gz
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz artifacts/
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## BakaSU manual-hook test'
+            echo 'Build completed with CONFIG_KSU=y and CONFIG_KSU_MANUAL_HOOK=y.'
+            echo 'This verifies compilation only; device boot/runtime validation is still required.'
+            echo 'SUSFS is deliberately not enabled: upstream BakaSU documents SUSFS backports for kernel 4.3+, while this target is Linux 3.18.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload BakaSU test artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-manual-hook-test
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
+ out/.config
 
       - name: Build BakaSU test kernel
         run: |
