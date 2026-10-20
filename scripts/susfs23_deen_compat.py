@@ -82,8 +82,8 @@ if label.strip() not in source:
 # Keep the original user_path_at() path active unless SUS_PATH is enabled; our
 # current partial profile explicitly disables SUS_PATH until its lookup hooks
 # are ported to this tree.
-const open = root / "fs/open.c"
-open_source = open.read_text()
+open_path = root / "fs/open.c"
+open_source = open_path.read_text()
 token = "fname = getname_flags(filename, lookup_flags, NULL);"
 if open_source.count(token) != 1:
     raise SystemExit("Expected exactly one SUSFS legacy faccessat injected block; refusing compatibility edit")
@@ -98,7 +98,7 @@ if between.count("\n") > 4 or between.strip():
 open_source = open_source[:guard_pos] + open_source[guard_pos:guard_end].replace(
     "#ifdef CONFIG_KSU_SUSFS", "#ifdef CONFIG_KSU_SUSFS_SUS_PATH", 1
 ) + open_source[guard_end:]
-open.write_text(open_source)
+open_path.write_text(open_source)
 
 # Backport the SUSFS patch set's newer header and static-key API to Linux 3.18.
 defs = root / "include/linux/susfs_def.h"
