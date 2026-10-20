@@ -105,6 +105,30 @@ for fn in ("ksu_handle_faccessat", "ksu_handle_stat"):
     source_text = source_text.replace(marker, replacement, 1)
 bakasu_source.write_text(source_text)
 
+# On 3.18 BakaSU intentionally uses a bool for ksu_su_compat_enabled. The
+# SUSFS-specific handlers in this revision assume a modern static key, so gate
+# those two checks on the same compatibility macro used by the rest of BakaSU.
+source_text = bakasu_source.read_text()
+for fn in ("ksu_handle_faccessat", "ksu_handle_stat"):
+    start_marker = "#if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\\nint " + fn + "("
+    start = source_text.find(start_marker)
+    end_marker = "\\n#else\\nint " + fn + "("
+    end = source_text.find(end_marker, start)
+    if start < 0 or end < 0:
+        raise SystemExit(f"Cannot locate versioned SUSFS handler for {fn}")
+    block = source_text[start:end]
+    old_check = "if (!static_branch_unlikely(&ksu_su_compat_enabled)) {"
+    if block.count(old_check) != 1:
+        raise SystemExit(f"Expected one modern static-key check in {fn}; refusing unsafe edit")
+    new_check = """#ifdef KSU_COMPAT_USE_STATIC_KEY
+    if (!static_branch_unlikely(&ksu_su_compat_enabled)) {
+#else
+    if (!ksu_su_compat_enabled) {
+#endif"""
+    block = block.replace(old_check, new_check, 1)
+    source_text = source_text[:start] + block + source_text[end:]
+bakasu_source.write_text(source_text)
+
 # The 3.18 tree has bool-based sucompat, while SUSFS's newer inline patch assumes
 # the modern static-key representation for this particular flag.
 for rel in ("fs/open.c", "fs/stat.c", "fs/exec.c"):
