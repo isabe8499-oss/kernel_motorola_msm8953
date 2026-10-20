@@ -188,6 +188,24 @@ for fn in ("ksu_handle_faccessat", "ksu_handle_stat"):
     source_text = source_text[:start] + block + source_text[end:]
 bakasu_source.write_text(source_text)
 
+# The generic script also injects an old KernelSU credential hook with
+# struct cred * arguments. BakaSU's ksu_handle_setuid() instead accepts uid_t
+# values and is already wired by its own setuid hook; remove the mismatched call.
+security_text = security_path.read_text()
+security_text, setuid_call_count = re.subn(
+    r"(?m)^\\s*ksu_handle_setuid\\(new, old\\);\\s*\\n",
+    "",
+    security_text,
+)
+security_text, setuid_decl_count = re.subn(
+    r"(?m)^\\s*extern int ksu_handle_setuid\\(struct cred \\*new, const struct cred \\*old\\);\\s*\\n",
+    "",
+    security_text,
+)
+if setuid_call_count > 1 or setuid_decl_count > 1:
+    raise SystemExit("Unexpected duplicate generic ksu_handle_setuid hook")
+security_path.write_text(security_text)
+
 # The 3.18 tree has bool-based sucompat, while SUSFS's newer inline patch assumes
 # the modern static-key representation for this particular flag.
 for rel in ("fs/open.c", "fs/stat.c", "fs/exec.c"):
