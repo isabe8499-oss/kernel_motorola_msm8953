@@ -237,6 +237,10 @@ ns.write_text(ns_data.rstrip() + "\n")
 rw = root / "fs/read_write.c"
 rw_lines = rw.read_text().splitlines()
 rw.write_text("\n".join(line.rstrip() if not line.strip() else line for line in rw_lines) + "\n")
+seccomp = root / "include/linux/seccomp.h"
+seccomp_text = seccomp.read_text()
+seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t filter_count;")
+seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
     "SUSFS v2.2 Linux 3.18 candidate profile — NOT full feature parity\n"
