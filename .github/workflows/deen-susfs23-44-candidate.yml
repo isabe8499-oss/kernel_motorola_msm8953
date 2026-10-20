@@ -28,31 +28,31 @@ jobs:
         run: |
           set -euo pipefail
           BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
-          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/\${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
-          sh /tmp/bakasu-setup.sh "\${BAKASU_COMMIT}"
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/$BAKASU_COMMIT/kernel/setup.sh" -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh "$BAKASU_COMMIT"
           test -L drivers/kernelsu
           test -f drivers/kernelsu/Kconfig
           ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
-          echo "\${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
-          test "\${ACTUAL_COMMIT}" = "\${BAKASU_COMMIT}"
+          echo "$ACTUAL_COMMIT" | tee bakasu-source-commit.txt
+          test "$ACTUAL_COMMIT" = "$BAKASU_COMMIT"
 
       - name: Download version-pinned SUSFS 2.3 patch set
         run: |
           set -euo pipefail
           BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
           SUSFS_PATCH_COMMIT=dcd789634247c77d8549a42aef232c680a905585
-          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/\${SUSFS_PATCH_COMMIT}/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4.patch
-          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/\${SUSFS_PATCH_COMMIT}/Patches/susfs_inline_hook_patches.sh" -o susfs_inline_hook_patches.sh
+          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$SUSFS_PATCH_COMMIT/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4.patch
+          curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/$SUSFS_PATCH_COMMIT/Patches/susfs_inline_hook_patches.sh" -o susfs_inline_hook_patches.sh
           mkdir -p artifacts
           sha256sum /tmp/susfs_patch_to_4.4.patch susfs_inline_hook_patches.sh | tee artifacts/source-sha256.txt
-          printf 'BakaSU=%s\nSUSFS_patch_source=JackA1ltman/NonGKI_Kernel_Build_2nd@%s\nCore_patch=susfs_patch_to_4.4.patch\n' "\${BAKASU_COMMIT}" "\${SUSFS_PATCH_COMMIT}" | tee artifacts/source-commits.txt
+          printf 'BakaSU=%s\nSUSFS_patch_source=JackA1ltman/NonGKI_Kernel_Build_2nd@%s\nCore_patch=susfs_patch_to_4.4.patch\n' "$BAKASU_COMMIT" "$SUSFS_PATCH_COMMIT" | tee artifacts/source-commits.txt
 
       - name: Apply SUSFS 2.3 core patch for 4.4 as a compatibility candidate
         run: |
           set +e
           patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4.patch > artifacts/core-patch-4.4.log 2>&1
           rc=$?
-          echo "core_patch_exit=\${rc}" | tee artifacts/patch-status.txt
+          echo "core_patch_exit=$rc" | tee artifacts/patch-status.txt
           exit 0
 
       - name: Apply SUSFS v2.3 inline hooks for legacy kernel
@@ -60,7 +60,7 @@ jobs:
           set +e
           bash susfs_inline_hook_patches.sh > artifacts/inline-hooks.log 2>&1
           rc=$?
-          echo "inline_hooks_exit=\${rc}" | tee -a artifacts/patch-status.txt
+          echo "inline_hooks_exit=$rc" | tee -a artifacts/patch-status.txt
           exit 0
 
       - name: Apply bounded SUSFS 2.3 compatibility profile for Linux 3.18
@@ -161,10 +161,10 @@ jobs:
           grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
           for symbol in KSU_SUSFS_SPOOF_UNAME KSU_SUSFS_ENABLE_LOG KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
-            grep -q "^CONFIG_\${symbol}=y$" out/.config
+            grep -q "^CONFIG_$symbol=y$" out/.config
           done
           for symbol in KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_KSTAT KSU_SUSFS_OPEN_REDIRECT KSU_SUSFS_SUS_MAP; do
-            grep -q "^# CONFIG_\${symbol} is not set$" out/.config
+            grep -q "^# CONFIG_$symbol is not set$" out/.config
           done
           cp out/.config artifacts/kernel.config
 
