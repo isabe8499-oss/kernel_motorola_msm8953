@@ -85,11 +85,9 @@ if "#include <linux/version.h>" not in header_text:
     header_text = header_text.replace("#include <linux/types.h>", "#include <linux/types.h>\n#include <linux/version.h>", 1)
 old_decl = """#ifdef CONFIG_KSU_SUSFS
 int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags);
-
 int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);"""
 new_decl = """#if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags);
-
 int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);"""
 if header_text.count(old_decl) != 1:
     raise SystemExit("BakaSU sucompat.h SUSFS declarations did not match exactly; refusing signature adaptation")
