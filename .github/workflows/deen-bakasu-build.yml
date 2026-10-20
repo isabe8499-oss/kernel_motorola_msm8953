@@ -12,6 +12,9 @@ on:
       - 'drivers/Kconfig'
       - 'drivers/Makefile'
       - 'fs/exec.c'
+      - 'kernel/reboot.c'
+      - 'fs/stat.c'
+      - 'fs/open.c'
 
 permissions:
   contents: read
