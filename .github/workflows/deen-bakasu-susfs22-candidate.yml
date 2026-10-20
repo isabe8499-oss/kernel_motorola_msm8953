@@ -1,4 +1,4 @@
-name: Deen BakaSU + SUSFS v2.2 Linux 3.18 candidate build
+name: Deen BakaSU-only GCC 4.9 control build (bootloop isolation)
 
 on:
   push:
@@ -25,10 +25,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev make python3 git curl cpio patch zip
 
-      - name: Install and verify the GCC 4.9 toolchain used by the known Deen kernel
+      - name: Install and verify the GCC 4.9 toolchain used by known Deen kernels
         run: |
           set -euo pipefail
-          git clone --depth=1 --branch google https://github.com/GrowtopiaJaw/aarch64-linux-android-4.9.git toolchain
+          git clone --depth=1 --branch master https://github.com/KudProject/aarch64-linux-android-4.9.git toolchain
           test -x toolchain/bin/aarch64-linux-android-gcc
           mkdir -p artifacts
           toolchain/bin/aarch64-linux-android-gcc --version | head -n 1 | tee artifacts/toolchain-version.txt
@@ -81,38 +81,24 @@ jobs:
           cat artifacts/deferred-feature-contract.txt
           git diff --check
 
-      - name: Configure bootloop-isolation profile
+      - name: Configure BakaSU-only control profile (SUSFS fully disabled)
         run: |
           set -euo pipefail
           export ARCH=arm64
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
           export CROSS_COMPILE=aarch64-linux-android-
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
           make O=out deen_defconfig
           scripts/config --file out/.config \
             --enable KSU \
-            --enable KSU_SUSFS \
+            --disable KSU_SUSFS \
             --disable KSU_MANUAL_HOOK \
-            --disable KSU_TRACEPOINT_HOOK \
-            --disable KSU_SUSFS_SUS_PATH \
-            --disable KSU_SUSFS_SUS_MOUNT \
-            --disable KSU_SUSFS_SUS_KSTAT \
-            --disable KSU_SUSFS_OPEN_REDIRECT \
-            --disable KSU_SUSFS_SUS_MAP \
-            --enable KSU_SUSFS_SPOOF_UNAME \
-            --enable KSU_SUSFS_ENABLE_LOG \
-            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
-            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+            --disable KSU_TRACEPOINT_HOOK
           make O=out olddefconfig
           grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_MOUNT is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_KSTAT is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_MAP is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS is not set$' out/.config
           grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          grep -E '^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_KSU_SUSFS_SPOOF_UNAME|CONFIG_KSU_SUSFS_ENABLE_LOG|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG)=' out/.config | tee artifacts/candidate-config.txt
+          grep -E '^(CONFIG_KSU)=' out/.config | tee artifacts/candidate-config.txt
 
       - name: Build candidate kernel
         run: |
@@ -123,18 +109,17 @@ jobs:
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
-          nm out/vmlinux | grep -q 'susfs'
           nm out/vmlinux | grep -q 'ksu_handle_sys_reboot'
           mkdir -p artifacts/kernel
           cp out/arch/arm64/boot/Image.gz-dtb artifacts/kernel/
           cp out/.config artifacts/kernel.config
-          nm out/vmlinux | grep -E 'susfs|ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
+          nm out/vmlinux | grep -E 'ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
           cp bakasu-source-commit.txt artifacts/
           cp artifacts/toolchain-version.txt artifacts/
           {
-            echo '## SUSFS v2.2 GCC 4.9 bootloop-isolation build'
+            echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
             echo
-            echo 'This is a partial compatibility profile. Bootloop-isolation profile: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP are disabled; only non-VFS spoof/logging options remain enabled. This reduces VFS hook risk but does not prove the device will boot. A successful compile is not device boot/runtime validation.'
+            echo 'Diagnostic control profile: BakaSU enabled, SUSFS completely disabled. This isolates SUSFS as a potential bootloop trigger; build success is not device boot/runtime validation.'
             echo
             cat artifacts/patch-status.txt
             echo
@@ -151,7 +136,7 @@ jobs:
           cat > anykernel/anykernel.sh <<'AK3'
           ### Deen XT1941-3 experimental kernel package
           properties() { '
-          kernel.string=Deen BakaSU + SUSFS v2.2 GCC 4.9 test (experimental)
+          kernel.string=Deen BakaSU-only GCC 4.9 control (SUSFS disabled; experimental)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -172,25 +157,25 @@ jobs:
           write_boot
           AK3
           cat > anykernel/NOT-FULL-SUSFS.txt <<'NOTE'
-          GCC 4.9 CONTROL BUILD — EXPERIMENTAL — NOT FULL SUSFS v2.2 FEATURE PARITY
+          GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
           Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
           This package uses the successfully compiled candidate kernel only.
-          Bootloop-isolation profile: all SUSFS VFS/path hooks are disabled. This is a diagnostic safer profile, not full SUSFS v2.2 feature parity.
+          Diagnostic control build: BakaSU is enabled but all SUSFS features are disabled to isolate whether the partial SUSFS integration causes the bootloop. This package is not a SUSFS build.
           Successful compilation does not prove boot/runtime compatibility.
           Keep a known-good boot image and recovery access before testing.
           NOTE
           cd anykernel
-          zip -qr9 ../artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          zip -qr9 ../artifacts/deen-bakasu-gcc49-control-twrp.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
-          sha256sum artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip | tee artifacts/flashable-zip-sha256.txt
-          unzip -t artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip
-          test -s artifacts/deen-bakasu-susfs22-gcc49-test-twrp.zip
+          sha256sum artifacts/deen-bakasu-gcc49-control-twrp.zip | tee artifacts/flashable-zip-sha256.txt
+          unzip -t artifacts/deen-bakasu-gcc49-control-twrp.zip
+          test -s artifacts/deen-bakasu-gcc49-control-twrp.zip
 
       - name: Upload candidate and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deen-linux-3.18.140-susfs22-gcc49-control
+          name: deen-linux-3.18.140-bakasu-gcc49-control
           path: |
             artifacts/
             susfs_inline22.sh
