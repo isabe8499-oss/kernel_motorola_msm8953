@@ -279,23 +279,23 @@ jobs:
           from pathlib import Path
           p = Path("kernel/reboot.c")
           s = p.read_text()
-          old = """#ifdef CONFIG_KSU_MANUAL_HOOK
-          \t{
-          \t\textern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
-          \t\tif (magic1 == 0xDEADBEEF)
-          \t\t\treturn ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
-          \t}
-          #endif"""
-          new = """#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)
-          \t{
-          \t\textern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
-          \t\tif (magic1 == 0xDEADBEEF)
-          \t\t\treturn ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
-          \t}
-          #endif"""
-          if s.count(old) != 1:
-              raise SystemExit("Expected exactly one guarded BakaSU reboot hook; refusing patch")
-          p.write_text(s.replace(old, new, 1))
+          marker = "ksu_handle_sys_reboot(magic1, magic2, cmd, &arg)"
+          if s.count(marker) != 1:
+              raise SystemExit(f"Expected one BakaSU reboot driver-discovery call, found {s.count(marker)}")
+          pos = s.index(marker)
+          guard = "#ifdef CONFIG_KSU_MANUAL_HOOK"
+          guard_pos = s.rfind(guard, 0, pos)
+          endif_pos = s.find("#endif", pos)
+          if guard_pos < 0 or endif_pos < 0:
+              raise SystemExit("Could not identify the existing guard around BakaSU reboot hook")
+          block = s[guard_pos:endif_pos]
+          if "ksu_handle_sys_reboot" not in block:
+              raise SystemExit("Existing BakaSU reboot hook is not inside the expected guard")
+          s = s[:guard_pos] + s[guard_pos:endif_pos].replace(
+              guard, "#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)", 1
+          ) + s[endif_pos:]
+          p.write_text(s)
+          print("Updated existing BakaSU reboot hook guard for SUSFS inline mode.")
           PY
           grep -q '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' kernel/reboot.c
           grep -q 'ksu_handle_sys_reboot(magic1, magic2, cmd, &arg)' kernel/reboot.c
