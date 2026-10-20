@@ -77,6 +77,63 @@ if label.strip() not in source:
     source = source[:func_start] + func + source[func_end:]
     avc.write_text(source)
 
+# Backport the SUSFS patch set's newer header and static-key API to Linux 3.18.
+defs = root / "include/linux/susfs_def.h"
+defs_source = defs.read_text()
+if defs_source.count("#include <linux/bits.h>") != 1:
+    raise SystemExit("Expected linux/bits.h include not found exactly once; review SUSFS header version")
+defs.write_text(defs_source.replace("#include <linux/bits.h>", "#include <linux/bitops.h>", 1))
+
+static_key_paths = [
+    "fs/susfs.c",
+    "kernel/sys.c",
+    "fs/proc/cmdline.c",
+    "security/selinux/avc.c",
+    "fs/namespace.c",
+    "fs/super.c",
+    "fs/proc/base.c",
+    "fs/proc/fd.c",
+    "fs/notify/fdinfo.c",
+    "fs/proc/task_mmu.c",
+    "fs/stat.c",
+    "fs/read_write.c",
+    "fs/open.c",
+    "fs/exec.c",
+    "kernel/reboot.c",
+    "kernel/kallsyms.c",
+    "security/security.c",
+    "security/selinux/hooks.c",
+    "drivers/input/input.c",
+]
+for rel in static_key_paths:
+    path = root / rel
+    if not path.is_file():
+        continue
+    text = path.read_text()
+    before = text
+    text = re.sub(r"\bDEFINE_STATIC_KEY_FALSE\((\w+)\);", r"struct static_key \1 = STATIC_KEY_INIT_FALSE;", text)
+    text = re.sub(r"\bDEFINE_STATIC_KEY_TRUE\((\w+)\);", r"struct static_key \1 = STATIC_KEY_INIT_TRUE;", text)
+    text = re.sub(r"\bstruct static_key_false\b", "struct static_key", text)
+    text = re.sub(r"\bstruct static_key_true\b", "struct static_key", text)
+    text = re.sub(r"\bstatic_branch_likely\s*\(", "static_key_enabled(", text)
+    text = re.sub(r"\bstatic_branch_unlikely\s*\(", "static_key_enabled(", text)
+    text = re.sub(r"\bstatic_branch_enable\s*\(", "static_key_slow_inc(", text)
+    text = re.sub(r"\bstatic_branch_disable\s*\(", "static_key_slow_dec(", text)
+    if text != before and (
+        "static_key_enabled(" in text or
+        "static_key_slow_inc(" in text or
+        "static_key_slow_dec(" in text or
+        "STATIC_KEY_INIT_FALSE" in text or
+        "STATIC_KEY_INIT_TRUE" in text
+    ):
+        if "#include <linux/jump_label.h>" not in text:
+            match = re.search(r"(?m)^#include <linux/[^>\n]+>\n", text)
+            if not match:
+                raise SystemExit(f"Could not find include anchor to add jump_label.h in {rel}")
+            text = text[:match.end()] + "#include <linux/jump_label.h>\n" + text[match.end():]
+    if text != before:
+        path.write_text(text)
+
 # Preserve every rejected hunk verbatim, then remove only the allowlisted
 # .rej files because the candidate profile explicitly disables those features.
 manifest = []
