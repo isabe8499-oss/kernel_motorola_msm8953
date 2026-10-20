@@ -39,6 +39,7 @@ jobs:
       - name: Download version-pinned SUSFS 2.3 patch set
         run: |
           set -euo pipefail
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
           SUSFS_PATCH_COMMIT=dcd789634247c77d8549a42aef232c680a905585
           curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/${SUSFS_PATCH_COMMIT}/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4.patch
           curl -fsSL "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/${SUSFS_PATCH_COMMIT}/Patches/susfs_inline_hook_patches.sh" -o susfs_inline_hook_patches.sh
