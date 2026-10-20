@@ -7,11 +7,20 @@ corresponding features in Kconfig. Unknown rejects abort rather than being
 silently discarded.
 """
 from pathlib import Path
+import re
 import shutil
 import sys
 
 root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
 artifacts = Path(sys.argv[2] if len(sys.argv) > 2 else "artifacts").resolve()
+status_path = artifacts / "patch-status.txt"
+prior_status = status_path.read_text() if status_path.exists() else ""
+if not re.search(r"(?m)^inline_hooks_exit=0$", prior_status):
+    raise SystemExit("Inline hook script did not exit cleanly; refusing compatibility adaptation")
+core_match = re.search(r"(?m)^core_patch_exit=(\d+)$", prior_status)
+if not core_match:
+    raise SystemExit("Core patch exit status is missing; refusing compatibility adaptation")
+core_exit = core_match.group(1)
 deferred_dir = artifacts / "deferred-hunks"
 deferred_dir.mkdir(parents=True, exist_ok=True)
 
@@ -95,7 +104,7 @@ rw.write_text("\n".join(line.rstrip() if not line.strip() else line for line in 
 )
 (artifacts / "hunk-disposition.tsv").write_text("\n".join(manifest) + "\n")
 (artifacts / "patch-status.txt").write_text(
-    "core_patch_exit=1 (expected: 3.18-incompatible hunks are individually dispositioned)\n"
+    f"core_patch_exit={core_exit} (raw patch status; remaining hunks are individually dispositioned)\n"
     "inline_hooks_exit=0\n"
     "compat_profile=partial-susfs23-legacy-kernel\n"
     "avc_label_adaptation=applied\n"
