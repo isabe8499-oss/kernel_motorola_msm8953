@@ -50,37 +50,6 @@ jobs:
           test -L drivers/kernelsu
           test -f drivers/kernelsu/Kconfig
 
-      - name: Download pinned SUSFS v2.2 core patch and hooks
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          CORE_COMMIT=30492fd415f12414104beb14349e83e58017dfa9
-          HOOK_COMMIT=16b6032141d284423160182577fb465e55e4925d
-          curl -fsSL "https://raw.githubusercontent.com/redmax19/build/$CORE_COMMIT/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4_v22.patch
-          curl -fsSL "https://raw.githubusercontent.com/kyzuna28/Compiler/$HOOK_COMMIT/hook%20v1/susfs_inline22.sh" -o susfs_inline22.sh
-          sha256sum /tmp/susfs_patch_to_4.4_v22.patch susfs_inline22.sh | tee artifacts/source-sha256.txt
-          printf 'BakaSU=7c383cfeef3a2ac450f2f1273dae74bd50356d31\nCore_patch=redmax19/build@%s\nHook_script=kyzuna28/Compiler@%s\n' "$CORE_COMMIT" "$HOOK_COMMIT" | tee artifacts/source-commits.txt
-
-      - name: Apply SUSFS v2.2 core patch and inline hooks
-        run: |
-          set -euo pipefail
-          set +e
-          patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4_v22.patch > artifacts/core-patch.log 2>&1
-          core_rc=$?
-          bash susfs_inline22.sh > artifacts/inline-hooks.log 2>&1
-          hook_rc=$?
-          set -e
-          printf 'core_patch_exit=%s\ninline_hooks_exit=%s\n' "$core_rc" "$hook_rc" | tee artifacts/patch-status.txt
-          test "$hook_rc" -eq 0
-
-      - name: Apply audited Linux 3.18 and BakaSU compatibility adapter
-        run: |
-          set -euo pipefail
-          python3 scripts/susfs22_deen_compat.py . artifacts
-          cat artifacts/patch-status.txt
-          cat artifacts/deferred-feature-contract.txt
-          git diff --check
-
       - name: Configure BakaSU-only control profile (SUSFS fully disabled)
         run: |
           set -euo pipefail
@@ -115,7 +84,6 @@ jobs:
           cp out/.config artifacts/kernel.config
           nm out/vmlinux | grep -E 'ksu_handle_(sys_reboot|execveat|faccessat|stat)' > artifacts/kernel-symbols.txt
           cp bakasu-source-commit.txt artifacts/
-          cp artifacts/toolchain-version.txt artifacts/
           {
             echo '## Deen BakaSU-only GCC 4.9 control build (SUSFS disabled)'
             echo
@@ -126,7 +94,7 @@ jobs:
             cat artifacts/deferred-feature-contract.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Package experimental TWRP flashable ZIP (partial SUSFS profile)
+      - name: Package experimental TWRP flashable ZIP (BakaSU-only control)
         run: |
           set -euo pipefail
           AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
@@ -156,7 +124,7 @@ jobs:
           dump_boot
           write_boot
           AK3
-          cat > anykernel/NOT-FULL-SUSFS.txt <<'NOTE'
+          cat > anykernel/BAKASU-ONLY-CONTROL.txt <<'NOTE'
           GCC 4.9 CONTROL BUILD — BAKASU ONLY; SUSFS FULLY DISABLED
           Device target: Motorola One Deen / XT1941-3, Linux 3.18.140
           This package uses the successfully compiled candidate kernel only.
