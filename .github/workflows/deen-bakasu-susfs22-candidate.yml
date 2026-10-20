@@ -3,7 +3,7 @@ name: Deen BakaSU + SUSFS v2.2 GCC 4.9 manual-hook stage 1
 on:
   push:
     branches:
-      - deen-bakasu-susfs22-gcc49-stage1
+      - deen-bakasu-susfs22-root-preserve
   workflow_dispatch:
 
 permissions:
@@ -43,6 +43,85 @@ jobs:
           ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
           echo "${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
           test "${ACTUAL_COMMIT}" = "${BAKASU_COMMIT}"
+
+      - name: Decouple SUSFS feature flag from the mutually-exclusive hooking method
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          kp = Path("KernelSU/kernel/Kconfig")
+          k = kp.read_text()
+          if "config KSU_SUSFS_INLINE_HOOK" not in k:
+              start = k.find("config KSU_SUSFS\n")
+              end = k.find("endchoice", start)
+              if start < 0 or end < 0:
+                  raise SystemExit("Could not locate SUSFS-inline choice entry in BakaSU Kconfig")
+              block = k[start:end]
+              if 'bool "SUSFS Inline Hook"' not in block:
+                  raise SystemExit("Kconfig choice entry is not the expected SUSFS Inline Hook")
+              block = block.replace("config KSU_SUSFS", "config KSU_SUSFS_INLINE_HOOK", 1)
+              block = block.replace('bool "SUSFS Inline Hook"', 'bool "SUSFS Inline Hook method"', 1)
+              k = k[:start] + block + k[end:]
+              anchor = 'endchoice\n\nmenu "KernelSU - Manual Hook Auto hook"'
+              if k.count(anchor) != 1:
+                  raise SystemExit("Could not locate end of hook-method choice")
+              feature = """endchoice
+
+          config KSU_SUSFS
+              bool "SUSFS kernel features (compatible with Manual Hook)"
+              depends on KSU && THREAD_INFO_IN_TASK && 64BIT
+              default n
+              help
+                  Enable SUSFS kernel-side functionality independently of the exclusive hook-method choice.
+                  This permits legacy kernels to retain the working KSU_MANUAL_HOOK root path.
+
+          menu "KernelSU - Manual Hook Auto hook""" 
+              k = k.replace(anchor, feature, 1)
+              kp.write_text(k)
+
+          bp = Path("KernelSU/kernel/Kbuild")
+          b = bp.read_text()
+          start = b.find("else ifdef CONFIG_KSU_SUSFS\n")
+          end_marker = "endif\n\nifndef CONFIG_KSU_TRACEPOINT_HOOK"
+          end = b.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit("Could not locate KSU hook-method choice block in BakaSU Kbuild")
+          chain = """else ifdef CONFIG_KSU_SUSFS_INLINE_HOOK
+            $(info -- $(REPO_NAME): using SUSFS Inline Hook method)
+            include $(KSU_SRC)/tools/inline_hook_check.mk
+          else
+            ifeq ($(CONFIG_KSU),y)
+              $(error Unsupported hook method)
+            endif
+          endif
+
+          # SUSFS is now independent from the exclusive hook-method choice.
+          ifdef CONFIG_KSU_SUSFS
+            include $(KSU_SRC)/tools/susfs_compat.mk
+            ifeq ($(shell test -e $(srctree)/fs/susfs.c; echo $$?),0)
+              SUSFS_VERSION := $(shell cat $(srctree)/include/linux/susfs.h | grep -E '^#define SUSFS_VERSION' | cut -d' ' -f3 | sed 's/"//g')
+              $(info -- SUSFS_VERSION: $(SUSFS_VERSION))
+            else
+              $(info -- SUSFS core fs/susfs.c is missing)
+              $(error SUSFS is enabled but the kernel-side SUSFS core was not integrated)
+            endif
+          endif
+
+          """
+          b = b[:start] + chain + b[end + len("endif\n\n"):]
+          if "else ifdef CONFIG_KSU_SUSFS_INLINE_HOOK" not in b:
+              raise SystemExit("Kbuild inline-hook method rename failed")
+          if b.count("include $(KSU_SRC)/tools/susfs_compat.mk") != 1:
+              raise SystemExit("Expected one independent SUSFS compatibility include")
+          bp.write_text(b)
+          print("Separated SUSFS feature support from the hook-method choice.")
+          PY
+          grep -q 'config KSU_SUSFS_INLINE_HOOK' KernelSU/kernel/Kconfig
+          grep -q 'config KSU_SUSFS$' KernelSU/kernel/Kconfig
+          grep -q 'else ifdef CONFIG_KSU_SUSFS_INLINE_HOOK' KernelSU/kernel/Kbuild
+          grep -q 'include $(KSU_SRC)/tools/manual_hook_check.mk' KernelSU/kernel/Kbuild
+          grep -q 'include $(KSU_SRC)/tools/susfs_compat.mk' KernelSU/kernel/Kbuild
 
       - name: Integrate legacy execve hooks
         run: |
@@ -291,18 +370,23 @@ jobs:
           grep -n -B 8 -A 8 'ksu_handle_sys_reboot' kernel/reboot.c | tee artifacts/reboot-hook-check.txt
           test -s artifacts/reboot-hook-check.txt
 
-      - name: Configure SUSFS stage-1 inline-hook profile
+      - name: Configure BakaSU manual hooks + SUSFS feature profile
         run: |
           set -euo pipefail
           export ARCH=arm64
           export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
           export CROSS_COMPILE=aarch64-linux-android-
           make O=out deen_defconfig
-          grep -q 'config KSU_SUSFS' drivers/kernelsu/Kconfig
+          grep -q 'config KSU_MANUAL_HOOK' drivers/kernelsu/Kconfig
+          grep -q 'config KSU_SUSFS_INLINE_HOOK' drivers/kernelsu/Kconfig
           scripts/config --file out/.config \
             --enable KSU \
-            --disable KSU_MANUAL_HOOK \
+            --enable KSU_MANUAL_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
             --enable KSU_SUSFS \
+            --disable KSU_SUSFS_INLINE_HOOK \
             --disable KSU_TRACEPOINT_HOOK \
             --disable KSU_SUSFS_SUS_PATH \
             --disable KSU_SUSFS_SUS_MOUNT \
@@ -315,8 +399,12 @@ jobs:
             --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
           make O=out olddefconfig
           grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_INLINE_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set$' out/.config
           grep -q '^# CONFIG_KSU_SUSFS_SUS_MOUNT is not set$' out/.config
@@ -327,9 +415,9 @@ jobs:
           grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y$' out/.config
-          grep -E '^(CONFIG_KSU=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
+          grep -E '^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
 
-      - name: Build SUSFS stage-1 kernel
+      - name: Build BakaSU manual-hook + SUSFS kernel
         run: |
           set -euo pipefail
           export ARCH=arm64
@@ -340,7 +428,148 @@ jobs:
           test -s out/vmlinux
           # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
           nm out/vmlinux | grep -q ksu_handle_sys_reboot
+          nm out/vmlinux | grep -q ksu_install_fd
           nm out/vmlinux | grep -q susfs
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+          cp out/.config artifacts/kernel.config
+          nm out/vmlinux | grep -E 'susfs|ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/kernel-symbols.txt
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## Deen BakaSU + SUSFS v2.2 stage-1 build'
+            echo 'Uses the confirmed working KSU_MANUAL_HOOK root path and enables SUSFS as an independent feature. SUSFS inline-hook and Tracepoint modes remain disabled. Enabled features: spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; higher-risk VFS/path features remain disabled.'
+            echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
+            cat artifacts/patch-status.txt
+            cat artifacts/deferred-feature-contract.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+      - name: Package experimental TWRP flashable ZIP (manual root + SUSFS)
+        run: |
+          set -euo pipefail
+          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
+          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
+          git -C anykernel checkout --detach "$AK3_COMMIT"
+          cp artifacts/Image.gz-dtb anykernel/Image.gz-dtb
+          cat > anykernel/anykernel.sh <<'AK3'
+          ### Deen XT1941-3 BakaSU manual-hook + SUSFS v2.2 stage-1 kernel
+          properties() { '
+          kernel.string=Deen BakaSU manual-hook + SUSFS v2.2 stage 1 GCC 4.9 (experimental)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=deen
+          device.name2=XT1941-3
+          supported.versions=
+          supported.patchlevels=
+          supported.vendorpatchlevels=
+          '; }
+          BLOCK=/dev/block/bootdevice/by-name/boot
+          IS_SLOT_DEVICE=1
+          RAMDISK_COMPRESSION=auto
+          PATCH_VBMETA_FLAG=auto
+          . tools/ak3-core.sh
+          dump_boot
+          write_boot
+          AK3
+          cat > anykernel/SUSFS-STAGE1-EXPERIMENTAL.txt <<'NOTE'
+          EXPERIMENTAL ROOT-PRESERVING SUSFS v2.2 STAGE-1 BUILD
+          Target: Motorola One Deen / XT1941-3, Linux 3.18.140.
+          Keeps CONFIG_KSU_MANUAL_HOOK enabled and compiles SUSFS as an independent feature flag.
+          Enabled SUSFS options: spoof uname, logging, hide SUSFS symbols, spoof cmdline/bootconfig.
+          Disabled SUSFS options: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SUS_MAP.
+          Compile/ZIP checks do not prove boot/runtime compatibility. Keep a known-good Boot backup and recovery access.
+          NOTE
+          cd anykernel
+          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          cd ..
+          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
+          test -s artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+
+      - name: Upload BakaSU GCC 4.9 TWRP package and diagnostics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-root-susfs22-stage1-gcc49
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
+ out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+          cp out/.config artifacts/kernel.config
+          nm out/vmlinux | grep -E 'susfs|ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/kernel-symbols.txt
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## Deen BakaSU + SUSFS v2.2 stage-1 build'
+            echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP remain disabled.'
+            echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
+            cat artifacts/patch-status.txt
+            cat artifacts/deferred-feature-contract.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+      - name: Package experimental TWRP flashable ZIP (SUSFS stage 1)
+        run: |
+          set -euo pipefail
+          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
+          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
+          git -C anykernel checkout --detach "$AK3_COMMIT"
+          cp artifacts/Image.gz-dtb anykernel/Image.gz-dtb
+          cat > anykernel/anykernel.sh <<'AK3'
+          ### Deen XT1941-3 BakaSU + SUSFS v2.2 stage-1 kernel
+          properties() { '
+          kernel.string=Deen BakaSU + SUSFS v2.2 stage 1 GCC 4.9 (experimental)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=deen
+          device.name2=XT1941-3
+          supported.versions=
+          supported.patchlevels=
+          supported.vendorpatchlevels=
+          '; }
+          BLOCK=/dev/block/bootdevice/by-name/boot
+          IS_SLOT_DEVICE=1
+          RAMDISK_COMPRESSION=auto
+          PATCH_VBMETA_FLAG=auto
+          . tools/ak3-core.sh
+          dump_boot
+          write_boot
+          AK3
+          cat > anykernel/SUSFS-STAGE1-EXPERIMENTAL.txt <<'NOTE'
+          EXPERIMENTAL SUSFS v2.2 STAGE-1 BUILD
+          Target: Motorola One Deen / XT1941-3, Linux 3.18.140.
+          Keeps the known-working GCC 4.9 BakaSU manual-hook setup.
+          Enabled SUSFS options: spoof uname, logging, hide SUSFS symbols, spoof cmdline/bootconfig.
+          Disabled SUSFS options: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SUS_MAP.
+          Compile/ZIP checks do not prove boot/runtime compatibility. Keep a known-good Boot backup and recovery access.
+          NOTE
+          cd anykernel
+          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          cd ..
+          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
+          test -s artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+
+      - name: Upload BakaSU GCC 4.9 TWRP package and diagnostics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-root-susfs22-stage1-gcc49
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
+ out/.config
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image.gz-dtb artifacts/
           cp out/.config artifacts/kernel.config
