@@ -26,11 +26,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev \
-            libncurses5-dev libncursesw5-dev python3 unzip zip wget git
+            libncurses5-dev libncursesw5-dev python3 python-is-python3 unzip zip wget git
 
       - name: Install Android GCC 4.9 toolchain
         run: |
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 "$RUNNER_TEMP/aarch64-gcc"
+          git clone --depth=1 https://github.com/KudProject/aarch64-linux-android-4.9.git "$RUNNER_TEMP/aarch64-gcc"
+          test -x "$RUNNER_TEMP/aarch64-gcc/bin/aarch64-linux-android-gcc"
+          "$RUNNER_TEMP/aarch64-gcc/bin/aarch64-linux-android-gcc" --version
           echo "$RUNNER_TEMP/aarch64-gcc/bin" >> "$GITHUB_PATH"
 
       - name: Configure and compile
