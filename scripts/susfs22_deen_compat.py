@@ -745,6 +745,37 @@ struct file *do_file_open_root"""
         raise SystemExit("do_filp_open OPEN_REDIRECT cleanup anchor mismatch")
     ns = ns.replace(ret_anchor, ret_replacement, 1)
 
+# Reverse disguise for direct generic_readlink() calls on redirected symlink inodes.
+if "susfs_open_redirect_spoof_vfs_readlink" not in ns:
+    proto_anchor = "EXPORT_SYMBOL(readlink_copy);\n"
+    proto = """EXPORT_SYMBOL(readlink_copy);
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+extern int susfs_open_redirect_spoof_vfs_readlink(struct inode *inode, char __user *buffer, int buflen);
+#endif
+"""
+    if ns.count(proto_anchor) != 1:
+        raise SystemExit("namei.c generic_readlink prototype anchor mismatch")
+    ns = ns.replace(proto_anchor, proto, 1)
+readlink_call_anchor = """\tres = readlink_copy(buffer, buflen, nd_get_link(&nd));
+\tif (dentry->d_inode->i_op->put_link)"""
+readlink_call_replacement = """#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+\tif (SUSFS_IS_INODE_OPEN_REDIRECT(dentry->d_inode)) {
+\t\tres = susfs_open_redirect_spoof_vfs_readlink(dentry->d_inode, buffer, buflen);
+\t\tif (!res) {
+\t\t\tif (dentry->d_inode->i_op->put_link)
+\t\t\t\tdentry->d_inode->i_op->put_link(dentry, &nd, cookie);
+\t\t\treturn res;
+\t\t}
+\t}
+#endif
+\tres = readlink_copy(buffer, buflen, nd_get_link(&nd));
+\tif (dentry->d_inode->i_op->put_link)"""
+if "susfs_open_redirect_spoof_vfs_readlink(dentry->d_inode, buffer, buflen)" not in ns:
+    if ns.count(readlink_call_anchor) != 1:
+        raise SystemExit("namei.c generic_readlink insertion anchor mismatch")
+    ns = ns.replace(readlink_call_anchor, readlink_call_replacement, 1)
+np.write_text(ns)
+
 # Reverse disguise for readlink("/proc/<pid>/fd/*", exe, cwd and root).
 bp = root / "fs/proc/base.c"
 bs = bp.read_text()
