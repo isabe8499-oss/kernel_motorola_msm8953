@@ -2,6 +2,7 @@
 #define _LINUX_PID_H
 
 #include <linux/rcupdate.h>
+#include <linux/wait.h>
 
 enum pid_type
 {
@@ -63,10 +64,13 @@ struct pid
 	/* lists of tasks that use this pid */
 	struct hlist_head tasks[PIDTYPE_MAX];
 	struct rcu_head rcu;
+	/* Waiters are notified when the thread-group leader exits. */
+	wait_queue_head_t wait_pidfd;
 	struct upid numbers[1];
 };
 
 extern struct pid init_struct_pid;
+extern const struct file_operations pidfd_fops;
 
 struct pid_link
 {
