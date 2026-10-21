@@ -713,11 +713,20 @@ runtime_path = root / "drivers/kernelsu/runtime/ksud_integration.c"
 runtime_text = runtime_path.read_text()
 runtime_marker = "DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"
 marker_pos = runtime_text.find(runtime_marker)
-if marker_pos < 0 or runtime_text.find(runtime_marker, marker_pos + 1) >= 0:
-    raise SystemExit("Could not uniquely locate SUSFS initrc static-key definition")
+marker_count = runtime_text.count(runtime_marker)
+if marker_count != 1:
+    print(f"runtime path: {runtime_path}; resolved: {runtime_path.resolve()}")
+    print(f"initrc SUSFS marker count: {marker_count}; source bytes: {len(runtime_text)}")
+    print("Relevant runtime-source lines:")
+    for line_no, line in enumerate(runtime_text.splitlines(), 1):
+        if any(token in line for token in ("init_rc", "ksu_is_", "CONFIG_KSU_SUSFS", "CONFIG_KSU_MANUAL_HOOK")):
+            print(f"{line_no}: {line}")
+    (artifacts / "runtime-initrc-hook-source.c").write_text(runtime_text)
+    raise SystemExit("Could not uniquely locate SUSFS initrc static-key definition; diagnostic source uploaded")
 branch_pos = runtime_text.rfind("#elif", 0, marker_pos)
 if branch_pos < 0:
-    raise SystemExit("SUSFS initrc static key has no preceding conditional branch")
+    (artifacts / "runtime-initrc-hook-source.c").write_text(runtime_text)
+    raise SystemExit("SUSFS initrc static key has no preceding conditional branch; diagnostic source uploaded")
 line_start = runtime_text.rfind("\n", 0, branch_pos) + 1
 line_end = runtime_text.find("\n", branch_pos)
 if line_end < 0:
