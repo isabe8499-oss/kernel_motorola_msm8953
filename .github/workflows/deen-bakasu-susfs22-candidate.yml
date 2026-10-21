@@ -1,0 +1,432 @@
+name: Deen BakaSU + SUSFS v2.2 GCC 4.9 manual-hook stage 1
+
+on:
+  push:
+    branches:
+      - deen-bakasu-susfs22-gcc49-stage1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-bakasu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev make python3 git curl cpio zip
+
+      - name: Install and verify GCC 4.9 toolchain
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch master https://github.com/KudProject/aarch64-linux-android-4.9.git toolchain
+          test -x toolchain/bin/aarch64-linux-android-gcc
+          mkdir -p artifacts
+          toolchain/bin/aarch64-linux-android-gcc --version | sed -n '1p' | tee artifacts/toolchain-version.txt
+
+      - name: Integrate BakaSU source
+        run: |
+          set -euo pipefail
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/${BAKASU_COMMIT}/kernel/setup.sh" -o /tmp/bakasu-setup.sh
+          sh /tmp/bakasu-setup.sh "${BAKASU_COMMIT}"
+          test -L drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          ACTUAL_COMMIT="$(git -C KernelSU rev-parse HEAD)"
+          echo "${ACTUAL_COMMIT}" | tee bakasu-source-commit.txt
+          test "${ACTUAL_COMMIT}" = "${BAKASU_COMMIT}"
+
+      - name: Integrate legacy execve hooks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("fs/exec.c")
+          s = p.read_text()
+
+          marker = """static int do_execve_common(struct filename *filename,
+          				struct user_arg_ptr argv,
+          				struct user_arg_ptr envp)
+          {"""
+          replacement = """#ifdef CONFIG_KSU_MANUAL_HOOK
+          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
+          				void *argv, void *envp, int *flags);
+          extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
+          				void *argv, void *envp, int *flags, int *retval);
+          #endif
+
+          static int do_execve_common(struct filename *filename,
+          				struct user_arg_ptr argv,
+          				struct user_arg_ptr envp)
+          {"""
+          assert s.count(marker) == 1, "do_execve_common marker not unique; refusing unsafe patch"
+          s = s.replace(marker, replacement, 1)
+
+          old_vars = """	int retval;
+          	bool is_su;
+
+          	if (IS_ERR(filename))
+          		return PTR_ERR(filename);"""
+          new_vars = """	int retval;
+          	bool is_su;
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	int ksu_fd = AT_FDCWD;
+          	int ksu_flags = 0;
+          #endif
+
+          	if (IS_ERR(filename))
+          		return PTR_ERR(filename);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags);
+          #endif"""
+          assert s.count(old_vars) == 1, "execve local/guard block not unique; refusing unsafe patch"
+          s = s.replace(old_vars, new_vars, 1)
+
+          success = """	free_bprm(bprm);
+          	putname(filename);
+          	if (displaced)"""
+          success_new = """	free_bprm(bprm);
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+          #endif
+          	putname(filename);
+          	if (displaced)"""
+          assert s.count(success) == 1, "success cleanup marker not unique; refusing unsafe patch"
+          s = s.replace(success, success_new, 1)
+
+          failure = """out_ret:
+          	putname(filename);
+          	return retval;"""
+          failure_new = """out_ret:
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          	ksu_handle_post_execveat(&ksu_fd, &filename, &argv, &envp, &ksu_flags, &retval);
+          #endif
+          	putname(filename);
+          	return retval;"""
+          assert s.count(failure) == 1, "failure cleanup marker not unique; refusing unsafe patch"
+          s = s.replace(failure, failure_new, 1)
+
+          p.write_text(s)
+          print("Patched fs/exec.c: manual execveat pre/post hooks placed while struct filename is still valid.")
+          PY
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_post_execveat' fs/exec.c
+
+      - name: Integrate legacy faccessat/stat/vfs_read/reboot hooks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def patch_once(path, marker, replacement, label):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(marker)
+              if n != 1:
+                  raise SystemExit(f"{label}: expected exactly one marker, found {n}; refusing patch")
+              p.write_text(s.replace(marker, replacement, 1))
+              print(f"patched {path}: {label}")
+
+          patch_once("fs/open.c",
+          """\tunsigned int lookup_flags = LOOKUP_FOLLOW;
+
+          \tif (mode & ~S_IRWXO)""",
+          """\tunsigned int lookup_flags = LOOKUP_FOLLOW;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
+          \t\t\t\t\tint *mode, int *__unused_flags);
+          \t\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          \t}
+          #endif
+
+          \tif (mode & ~S_IRWXO)""", "faccessat")
+
+          patch_once("fs/stat.c",
+          """\tif (flag & AT_EMPTY_PATH)
+          \t\tlookup_flags |= LOOKUP_EMPTY;
+          retry:""",
+          """\tif (flag & AT_EMPTY_PATH)
+          \t\tlookup_flags |= LOOKUP_EMPTY;
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \t{
+          \t\textern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+          \t\tksu_handle_stat(&dfd, &filename, &flag);
+          \t}
+          #endif
+
+          retry:""", "stat")
+
+          patch_once("kernel/reboot.c",
+          """\tchar buffer[256];
+          \tint ret = 0;
+
+          \t/* We only trust the superuser with rebooting the system. */""",
+          """\tchar buffer[256];
+          \tint ret = 0;
+
+          #if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)
+          \t{
+          \t\textern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg);
+          \t\tif (magic1 == 0xDEADBEEF)
+          \t\t\treturn ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
+          \t}
+          #endif
+
+          \t/* We only trust the superuser with rebooting the system. */""", "sys_reboot")
+          # Add BakaSU stat return hooks required by its compile-time checker.
+          patch_once("fs/stat.c",
+          """SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          \treturn error;
+          }""",
+          """SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \textern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
+          \tksu_handle_newfstat_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }""", "newfstat_ret")
+
+          patch_once("fs/stat.c",
+          """SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          \treturn error;
+          }""",
+          """SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
+          {
+          \tstruct kstat stat;
+          \tint error = vfs_fstat(fd, &stat);
+
+          \tif (!error)
+          \t\terror = cp_new_stat64(&stat, statbuf);
+
+          #ifdef CONFIG_KSU_MANUAL_HOOK
+          \textern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);
+          \tksu_handle_fstat64_ret(&fd, &statbuf);
+          #endif
+          \treturn error;
+          }""", "fstat64_ret")
+          PY
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+          grep -q 'ksu_handle_newfstat_ret' fs/stat.c
+          grep -q 'ksu_handle_fstat64_ret' fs/stat.c
+          grep -q 'ksu_handle_sys_reboot' kernel/reboot.c
+
+      - name: Download pinned SUSFS v2.2 patch and inline hooks
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          CORE_COMMIT=30492fd415f12414104beb14349e83e58017dfa9
+          HOOK_COMMIT=16b6032141d284423160182577fb465e55e4925d
+          curl -fsSL "https://raw.githubusercontent.com/redmax19/build/$CORE_COMMIT/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4_v22.patch
+          curl -fsSL "https://raw.githubusercontent.com/kyzuna28/Compiler/$HOOK_COMMIT/hook%20v1/susfs_inline22.sh" -o susfs_inline22.sh
+          sha256sum /tmp/susfs_patch_to_4.4_v22.patch susfs_inline22.sh | tee artifacts/susfs-source-sha256.txt
+          printf 'Core_patch=redmax19/build@%s\nInline_hooks=kyzuna28/Compiler@%s\n' "$CORE_COMMIT" "$HOOK_COMMIT" | tee artifacts/susfs-source-commits.txt
+
+      - name: Apply SUSFS v2.2 and Deen 3.18 compatibility adapter
+        run: |
+          set -euo pipefail
+          set +e
+          patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4_v22.patch > artifacts/susfs-core-patch.log 2>&1
+          core_rc=$?
+          bash susfs_inline22.sh > artifacts/susfs-inline-hooks.log 2>&1
+          hook_rc=$?
+          set -e
+          printf 'core_patch_exit=%s\ninline_hooks_exit=%s\n' "$core_rc" "$hook_rc" | tee artifacts/patch-status.txt
+          test "$hook_rc" -eq 0
+          python3 scripts/susfs22_deen_compat.py . artifacts
+          cat artifacts/patch-status.txt
+          cat artifacts/deferred-feature-contract.txt
+          git diff --check
+
+      - name: Keep existing BakaSU root hooks active in SUSFS hook mode
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          files = {
+              "fs/exec.c": 5,
+              "fs/open.c": 1,
+              "fs/stat.c": 3,
+          }
+          old = "#ifdef CONFIG_KSU_MANUAL_HOOK"
+          new = "#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)"
+          for name, expected in files.items():
+              p = Path(name)
+              s = p.read_text()
+              count = s.count(old)
+              if count != expected:
+                  raise SystemExit(f"{name}: expected {expected} existing BakaSU hook guards, found {count}; refusing to guess")
+              s = s.replace(old, new)
+              p.write_text(s)
+              print(f"{name}: enabled {count} existing BakaSU hook guards for SUSFS mode")
+          PY
+          # The selected SUSFS hook mode must keep the legacy BakaSU call sites compiled.
+          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/exec.c)" -eq 5
+          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/open.c)" -eq 1
+          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/stat.c)" -eq 3
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_post_execveat' fs/exec.c
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+
+      - name: Validate legacy BakaSU hooks and record reboot discovery audit
+        run: |
+          set -euo pipefail
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
+          grep -n -B 8 -A 8 'ksu_handle_sys_reboot' kernel/reboot.c | tee artifacts/reboot-hook-check.txt
+          test -s artifacts/reboot-hook-check.txt
+
+      - name: Configure SUSFS stage-1 inline-hook profile
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
+          export CROSS_COMPILE=aarch64-linux-android-
+          make O=out deen_defconfig
+          grep -q 'config KSU_SUSFS' drivers/kernelsu/Kconfig
+          scripts/config --file out/.config \
+            --enable KSU \
+            --disable KSU_MANUAL_HOOK \
+            --enable KSU_SUSFS \
+            --disable KSU_TRACEPOINT_HOOK \
+            --disable KSU_SUSFS_SUS_PATH \
+            --disable KSU_SUSFS_SUS_MOUNT \
+            --disable KSU_SUSFS_SUS_KSTAT \
+            --disable KSU_SUSFS_OPEN_REDIRECT \
+            --disable KSU_SUSFS_SUS_MAP \
+            --enable KSU_SUSFS_SPOOF_UNAME \
+            --enable KSU_SUSFS_ENABLE_LOG \
+            --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            --enable KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          make O=out olddefconfig
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_MOUNT is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_KSTAT is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
+          grep -q '^# CONFIG_KSU_SUSFS_SUS_MAP is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y$' out/.config
+          grep -E '^(CONFIG_KSU=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
+
+      - name: Build SUSFS stage-1 kernel
+        run: |
+          set -euo pipefail
+          export ARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
+          export CROSS_COMPILE=aarch64-linux-android-
+          make O=out -j"$(nproc)" Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          test -s out/vmlinux
+          # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
+          nm out/vmlinux | grep -q ksu_handle_sys_reboot
+          nm out/vmlinux | grep -q susfs
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+          cp out/.config artifacts/kernel.config
+          nm out/vmlinux | grep -E 'susfs|ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/kernel-symbols.txt
+          find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
+          cp bakasu-source-commit.txt artifacts/
+          {
+            echo '## Deen BakaSU + SUSFS v2.2 stage-1 build'
+            echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP remain disabled.'
+            echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
+            cat artifacts/patch-status.txt
+            cat artifacts/deferred-feature-contract.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+      - name: Package experimental TWRP flashable ZIP (SUSFS stage 1)
+        run: |
+          set -euo pipefail
+          AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
+          git clone https://github.com/osm0sis/AnyKernel3.git anykernel
+          git -C anykernel checkout --detach "$AK3_COMMIT"
+          cp artifacts/Image.gz-dtb anykernel/Image.gz-dtb
+          cat > anykernel/anykernel.sh <<'AK3'
+          ### Deen XT1941-3 BakaSU + SUSFS v2.2 stage-1 kernel
+          properties() { '
+          kernel.string=Deen BakaSU + SUSFS v2.2 stage 1 GCC 4.9 (experimental)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=deen
+          device.name2=XT1941-3
+          supported.versions=
+          supported.patchlevels=
+          supported.vendorpatchlevels=
+          '; }
+          BLOCK=/dev/block/bootdevice/by-name/boot
+          IS_SLOT_DEVICE=1
+          RAMDISK_COMPRESSION=auto
+          PATCH_VBMETA_FLAG=auto
+          . tools/ak3-core.sh
+          dump_boot
+          write_boot
+          AK3
+          cat > anykernel/SUSFS-STAGE1-EXPERIMENTAL.txt <<'NOTE'
+          EXPERIMENTAL SUSFS v2.2 STAGE-1 BUILD
+          Target: Motorola One Deen / XT1941-3, Linux 3.18.140.
+          Keeps the known-working GCC 4.9 BakaSU manual-hook setup.
+          Enabled SUSFS options: spoof uname, logging, hide SUSFS symbols, spoof cmdline/bootconfig.
+          Disabled SUSFS options: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SUS_MAP.
+          Compile/ZIP checks do not prove boot/runtime compatibility. Keep a known-good Boot backup and recovery access.
+          NOTE
+          cd anykernel
+          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          cd ..
+          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
+          test -s artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+
+      - name: Upload BakaSU GCC 4.9 TWRP package and diagnostics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-linux-3.18.140-bakasu-susfs22-stage1-gcc49
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
