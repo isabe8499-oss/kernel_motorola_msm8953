@@ -349,6 +349,52 @@ jobs:
           cat artifacts/deferred-feature-contract.txt
           git diff --check
 
+      - name: Prevent duplicate SUSFS inline calls from overriding manual root hooks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          changed = []
+          # The v2.2 inline script can add direct setresuid/read hooks. The
+          # known-working Deen profile already handles these via BakaSU manual
+          # hooks; keep only the inline-only versions from running in that mode.
+          p = Path("kernel/sys.c")
+          lines = p.read_text().splitlines()
+          i = 0
+          while i < len(lines):
+              if lines[i].strip() == "#ifdef CONFIG_KSU_SUSFS":
+                  j = i + 1
+                  while j < len(lines) and lines[j].strip() != "#endif":
+                      j += 1
+                  if j < len(lines) and any("ksu_handle_setresuid" in x for x in lines[i:j+1]):
+                      lines[i] = "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)"
+                      changed.append("kernel/sys.c:setresuid")
+                      i = j
+              i += 1
+          p.write_text("\\n".join(lines) + "\\n")
+
+          p = Path("fs/read_write.c")
+          lines = p.read_text().splitlines()
+          i = 0
+          while i < len(lines):
+              if lines[i].strip() == "#ifdef CONFIG_KSU":
+                  j = i + 1
+                  while j < len(lines) and lines[j].strip() != "#endif":
+                      j += 1
+                  if j < len(lines) and any("ksu_handle_sys_read(fd)" in x for x in lines[i:j+1]):
+                      lines[i] = "#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_MANUAL_HOOK)"
+                      changed.append("fs/read_write.c:sys_read")
+                      i = j
+              i += 1
+          p.write_text("\\n".join(lines) + "\\n")
+          Path("artifacts/manual-inline-hook-suppression.txt").write_text(
+              "\\n".join(changed) + ("\\n" if changed else "No duplicate direct manual/initrc hook blocks detected; manual hook path preserved.\\n")
+          )
+          print("Manual/inline overlap audit:", changed or "no duplicate blocks found")
+          PY
+          cat artifacts/manual-inline-hook-suppression.txt
+
       - name: Audit preserved BakaSU driver-discovery hook
         run: |
           set -euo pipefail
