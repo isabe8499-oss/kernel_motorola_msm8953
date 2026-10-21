@@ -635,6 +635,7 @@ static int pidfd_create(struct pid *pid)
 SYSCALL_DEFINE2(pidfd_open, pid_t, nr, unsigned int, flags)
 {
 	struct pid *pid;
+	struct task_struct *task;
 	int ret;
 
 	if (flags)
@@ -646,9 +647,10 @@ SYSCALL_DEFINE2(pidfd_open, pid_t, nr, unsigned int, flags)
 	if (!pid)
 		return -ESRCH;
 
-	/* This first pidfd implementation supports thread-group leaders only. */
+	/* PIDTYPE_TGID is not a pid->tasks[] index on this 3.18 tree. */
 	rcu_read_lock();
-	ret = pid_task(pid, PIDTYPE_TGID) ? 0 : -EINVAL;
+	task = pid_task(pid, PIDTYPE_PID);
+	ret = task && thread_group_leader(task) ? 0 : -EINVAL;
 	rcu_read_unlock();
 	if (!ret)
 		ret = pidfd_create(pid);
