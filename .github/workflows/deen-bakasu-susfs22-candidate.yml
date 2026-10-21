@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - deen-bakasu-susfs22-gcc49-stage1
+      - backport/pidfd-bakasu-susfs22
   workflow_dispatch:
 
 permissions:
