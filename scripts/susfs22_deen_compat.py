@@ -922,8 +922,7 @@ if "susfs_open_redirect_spoof_vfs_statfs" not in st:
 stat_anchor = """int vfs_statfs(struct path *path, struct kstatfs *buf)
 {
 \tint error;
-
-\terror = statfs_by_dentry(path->dentry, buf);"""
+"""
 stat_replacement = """int vfs_statfs(struct path *path, struct kstatfs *buf)
 {
 \tint error;
@@ -933,7 +932,7 @@ stat_replacement = """int vfs_statfs(struct path *path, struct kstatfs *buf)
 \t    !susfs_open_redirect_spoof_vfs_statfs(path->dentry->d_inode, buf))
 \t\treturn 0;
 #endif
-\terror = statfs_by_dentry(path->dentry, buf);"""
+"""
 if "susfs_open_redirect_spoof_vfs_statfs(path->dentry->d_inode, buf)" not in st:
     if st.count(stat_anchor) != 1:
         raise SystemExit("statfs.c reverse-spoof insertion anchor mismatch")
