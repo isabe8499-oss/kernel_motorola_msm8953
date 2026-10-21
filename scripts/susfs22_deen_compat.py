@@ -381,6 +381,19 @@ for rel in static_key_paths:
         path.write_text(text)
 
 
+# OPEN_REDIRECT's procfs readlink hook needs the SUSFS inode predicate declaration.
+# The upstream hunk did not add the include on this older tree.
+proc_base = root / "fs/proc/base.c"
+proc_text = proc_base.read_text()
+if "SUSFS_IS_INODE_OPEN_REDIRECT" not in proc_text:
+    raise SystemExit("OPEN_REDIRECT callsite missing from fs/proc/base.c")
+if "#include <linux/susfs_def.h>" not in proc_text:
+    include_anchor = "#include <linux/stat.h>\\n"
+    if proc_text.count(include_anchor) != 1:
+        raise SystemExit("Cannot uniquely locate fs/proc/base.c include anchor")
+    proc_text = proc_text.replace(include_anchor, include_anchor + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\\n#include <linux/susfs_def.h>\\n#endif\\n", 1)
+    proc_base.write_text(proc_text)
+
 # Linux 3.18 SUS_PATH compatibility: its nameidata structure is in the public
 # header and path_init replaces the newer set_nameidata helper.
 nh_path = root / "include/linux/namei.h"
