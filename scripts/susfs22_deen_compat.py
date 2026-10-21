@@ -780,7 +780,7 @@ np.write_text(ns)
 bp = root / "fs/proc/base.c"
 bs = bp.read_text()
 if "#include <linux/susfs_def.h>" not in bs:
-    inc = "#include <linux/cpufreq.h>\\n"
+    inc = "#include <linux/cpufreq.h>\n"
     if bs.count(inc) != 1:
         raise SystemExit("proc/base.c OPEN_REDIRECT include anchor mismatch")
     bs = bs.replace(inc, inc + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#endif\n", 1)
