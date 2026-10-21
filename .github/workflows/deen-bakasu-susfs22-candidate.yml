@@ -389,6 +389,38 @@ jobs:
                       i = j
               i += 1
           p.write_text("\n".join(lines) + "\n")
+
+          # The SUSFS inline vfs_fstat hook uses ksu_is_init_rc_hook_enabled,
+          # which is intentionally absent when the Manual Hook branch owns initrc.
+          # KSU_SUSFS_SUS_KSTAT is disabled in this candidate profile, so suppress
+          # only those SUSFS blocks that directly reference this initrc-only symbol.
+          p = Path("fs/stat.c")
+          lines = p.read_text().splitlines()
+          candidates = []
+          for i, line in enumerate(lines):
+              if line.strip() != "#ifdef CONFIG_KSU_SUSFS":
+                  continue
+              depth = 0
+              for j in range(i, len(lines)):
+                  token = lines[j].strip()
+                  if token.startswith("#if"):
+                      depth += 1
+                  elif token.startswith("#endif"):
+                      depth -= 1
+                      if depth == 0:
+                          if any("ksu_is_init_rc_hook_enabled" in x for x in lines[i:j + 1]):
+                              candidates.append((i, j))
+                          break
+          # Prefer the smallest matching blocks so unrelated SUSFS functionality stays intact.
+          selected = []
+          for span in candidates:
+              i, j = span
+              if not any(k >= i and l <= j and (k, l) != span for k, l in candidates):
+                  selected.append(span)
+          for i, j in selected:
+              lines[i] = "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)"
+              changed.append(f"fs/stat.c:initrc-inline-hook-lines-{i + 1}-{j + 1}")
+          p.write_text("\n".join(lines) + "\n")
           Path("artifacts/manual-inline-hook-suppression.txt").write_text(
               "\n".join(changed) + ("\n" if changed else "No duplicate direct manual/initrc hook blocks detected; manual hook path preserved.\n")
           )
