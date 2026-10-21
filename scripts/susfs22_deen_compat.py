@@ -313,6 +313,21 @@ if "SUSFS_IS_INODE_OPEN_REDIRECT" not in defs_source:
 elif "AS_FLAGS_OPEN_REDIRECT" not in defs_source:
     raise SystemExit("OPEN_REDIRECT predicate exists without its inode-state bit; refusing ambiguous patch")
 
+# proc/base.c contains the OPEN_REDIRECT predicate call but the rejected upstream
+# hunk omitted its header include. Add the guarded include on this legacy tree.
+proc_base = root / "fs/proc/base.c"
+proc_text = proc_base.read_text()
+if "#include <linux/susfs_def.h>" not in proc_text:
+    include_anchor = "#include <linux/"
+    first = proc_text.find(include_anchor)
+    if first < 0:
+        raise SystemExit("Cannot find include section in fs/proc/base.c for SUSFS header")
+    line_end = proc_text.find("\\n", first)
+    if line_end < 0:
+        raise SystemExit("Malformed include section in fs/proc/base.c")
+    proc_text = proc_text[:line_end + 1] + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\\n#include <linux/susfs_def.h>\\n#endif\\n" + proc_text[line_end + 1:]
+    proc_base.write_text(proc_text)
+
 static_key_paths = [
     "fs/susfs.c",
     "kernel/sys.c",
