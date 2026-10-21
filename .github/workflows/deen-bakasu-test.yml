@@ -28,12 +28,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio
 
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+
       - name: Install Android ARM64 test toolchain
         run: |
           set -euo pipefail
-          git clone --depth=1 --branch master https://github.com/KudProject/aarch64-linux-android-4.9.git android-toolchain
-          test -x android-toolchain/bin/aarch64-linux-android-gcc
-          android-toolchain/bin/aarch64-linux-android-gcc --version | sed -n '1p'
+          sdkmanager --install "ndk;27.2.12479018"
+          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang" --version | sed -n '1p'
 
       - name: Integrate BakaSU source
         run: |
@@ -277,8 +280,9 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
           # Build a device-runnable Android ARM64 test binary, not a host/glibc executable.
-          android-toolchain/bin/aarch64-linux-android-gcc -Wall -Wextra -Werror -O2 \
-            tools/testing/selftests/pidfd/pidfd_open_test.c -o out/pidfd_open_test
+          "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang" \
+            -Wall -Wextra -Werror -O2 tools/testing/selftests/pidfd/pidfd_open_test.c \
+            -o out/pidfd_open_test
           readelf -h out/pidfd_open_test | grep -q 'AArch64'
           # The linked kernel must contain both pidfd syscall entry points and BakaSU driver discovery.
           nm out/vmlinux | grep -q sys_pidfd_open
