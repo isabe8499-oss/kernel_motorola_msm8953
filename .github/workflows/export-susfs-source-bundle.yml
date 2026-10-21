@@ -1,0 +1,91 @@
+name: Export Deen SUSFS source bundle
+
+on:
+  push:
+    branches:
+      - export/susfs-source-bundle-20261021
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact kernel fork revision
+        uses: actions/checkout@v4
+        with:
+          ref: e50c159f18db14ff3118bb29dfa729f9a0728a92
+
+      - name: Prepare SUSFS 2.2 source as used by the Deen build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          CORE_COMMIT=30492fd415f12414104beb14349e83e58017dfa9
+          HOOK_COMMIT=16b6032141d284423160182577fb465e55e4925d
+          BAKASU_COMMIT=7c383cfeef3a2ac450f2f1273dae74bd50356d31
+          curl -fsSL "https://raw.githubusercontent.com/redmax19/build/${CORE_COMMIT}/Patches/Patch/susfs_patch_to_4.4.patch" -o /tmp/susfs_patch_to_4.4.patch
+          curl -fsSL "https://raw.githubusercontent.com/kyzuna28/Compiler/${HOOK_COMMIT}/hook%20v1/susfs_inline22.sh" -o susfs_inline22.sh
+          sha256sum /tmp/susfs_patch_to_4.4.patch susfs_inline22.sh | tee artifacts/susfs-source-sha256.txt
+          printf 'Core_patch=redmax19/build@%s\nInline_hooks=kyzuna28/Compiler@%s\nBakaSU_dispatcher=Baka-SU/BakaSU@%s\nKernel_fork=isabe8499-oss/kernel_motorola_msm8953@e50c159f18db14ff3118bb29dfa729f9a0728a92\n' "${CORE_COMMIT}" "${HOOK_COMMIT}" "${BAKASU_COMMIT}" | tee artifacts/source-commits.txt
+
+          set +e
+          patch --batch --forward -p1 < /tmp/susfs_patch_to_4.4.patch > artifacts/susfs-core-patch.log 2>&1
+          core_rc=$?
+          bash susfs_inline22.sh > artifacts/susfs-inline-hooks.log 2>&1
+          hook_rc=$?
+          set -e
+          printf 'core_patch_exit=%s\ninline_hooks_exit=%s\n' "${core_rc}" "${hook_rc}" | tee artifacts/patch-status.txt
+          test "${hook_rc}" -eq 0
+          python3 scripts/susfs22_deen_compat.py . artifacts
+          git diff --check
+
+      - name: Assemble requested files
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=Deen-SUSFS22-source-bundle
+          mkdir -p "${OUT}/fs/proc" "${OUT}/fs" "${OUT}/include/linux" "${OUT}/KernelSU/kernel/supercall" "${OUT}/upstream" "${OUT}/build-records" "${OUT}/arch/arm64/configs" "${OUT}/scripts" "${OUT}/.github/workflows"
+          cp fs/proc/base.c "${OUT}/fs/proc/base.c"
+          cp fs/susfs.c "${OUT}/fs/susfs.c"
+          cp include/linux/susfs.h "${OUT}/include/linux/susfs.h"
+          cp include/linux/susfs_def.h "${OUT}/include/linux/susfs_def.h"
+          curl -fsSL "https://raw.githubusercontent.com/Baka-SU/BakaSU/7c383cfeef3a2ac450f2f1273dae74bd50356d31/kernel/supercall/dispatch.c" -o "${OUT}/KernelSU/kernel/supercall/dispatch.c"
+          cp /tmp/susfs_patch_to_4.4.patch "${OUT}/upstream/susfs_patch_to_4.4.patch"
+          cp susfs_inline22.sh "${OUT}/upstream/susfs_inline22.sh"
+          cp scripts/susfs22_deen_compat.py "${OUT}/scripts/susfs22_deen_compat.py"
+          cp arch/arm64/configs/deen_defconfig "${OUT}/arch/arm64/configs/deen_defconfig"
+          cp .github/workflows/deen-bakasu-susfs22-candidate.yml "${OUT}/.github/workflows/deen-bakasu-susfs22-candidate.yml"
+          cp artifacts/* "${OUT}/build-records/"
+          cat > "${OUT}/README.txt" <<'EOF'
+          Motorola One Deen / Linux 3.18.140 — SUSFS 2.2 source bundle
+          
+          fs/proc/base.c, fs/susfs.c and include/linux/susfs*.h are the source
+          files produced by applying the pinned upstream SUSFS 2.2 patch and
+          the same inline-hook/compatibility-adapter steps used by the recorded
+          Deen candidate build. The complete upstream patch is preserved under
+          upstream/susfs_patch_to_4.4.patch.
+          
+          KernelSU command dispatcher is from the pinned BakaSU commit listed in
+          build-records/source-commits.txt.
+          
+          This is a source snapshot, not a claim that every upstream hunk applied
+          cleanly. See build-records/patch-status.txt, susfs-core-patch.log,
+          hunk-disposition.tsv and deferred-hunks for exact patch disposition.
+          OPEN_REDIRECT remains disabled/unported in this candidate.
+          EOF
+          zip -qr Deen-SUSFS22-source-bundle.zip "${OUT}"
+          unzip -t Deen-SUSFS22-source-bundle.zip
+          sha256sum Deen-SUSFS22-source-bundle.zip | tee Deen-SUSFS22-source-bundle.sha256
+
+      - name: Upload source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Deen-SUSFS22-source-bundle
+          path: |
+            Deen-SUSFS22-source-bundle.zip
+            Deen-SUSFS22-source-bundle.sha256
+          retention-days: 14
