@@ -421,6 +421,40 @@ jobs:
               lines[i] = "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)"
               changed.append(f"fs/stat.c:initrc-inline-hook-lines-{i + 1}-{j + 1}")
           p.write_text("\n".join(lines) + "\n")
+
+          # Manual Hook owns its own input-event state. Do not compile the
+          # SUSFS-inline wrapper which references ksu_is_input_hook_enabled.
+          p = Path("drivers/input/input.c")
+          lines = p.read_text().splitlines()
+          starts = {
+              "#ifdef CONFIG_KSU": "#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_MANUAL_HOOK)",
+              "#ifdef CONFIG_KSU_SUSFS": "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)",
+          }
+          candidates = []
+          for i, line in enumerate(lines):
+              guard = line.strip()
+              if guard not in starts:
+                  continue
+              depth = 0
+              for j in range(i, len(lines)):
+                  token = lines[j].strip()
+                  if token.startswith("#if"):
+                      depth += 1
+                  elif token.startswith("#endif"):
+                      depth -= 1
+                      if depth == 0:
+                          if any("ksu_is_input_hook_enabled" in x for x in lines[i:j + 1]):
+                              candidates.append((i, j, starts[guard]))
+                          break
+          selected = []
+          for span in candidates:
+              i, j, replacement = span
+              if not any(k >= i and l <= j and (k, l) != (i, j, replacement) for k, l, _ in candidates):
+                  selected.append(span)
+          for i, j, replacement in selected:
+              lines[i] = replacement
+              changed.append(f"drivers/input/input.c:input-inline-hook-lines-{i + 1}-{j + 1}")
+          p.write_text("\n".join(lines) + "\n")
           Path("artifacts/manual-inline-hook-suppression.txt").write_text(
               "\n".join(changed) + ("\n" if changed else "No duplicate direct manual/initrc hook blocks detected; manual hook path preserved.\n")
           )
