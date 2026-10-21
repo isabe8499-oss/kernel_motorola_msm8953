@@ -1,4 +1,4 @@
-name: Deen BakaSU + SUSFS v2.2 GCC 4.9 experimental OPEN_REDIRECT stage 2 (#55)
+name: Deen BakaSU + SUSFS v2.2 GCC 4.9 experimental OPEN_REDIRECT stage 2 (#58)
 # Root fix: preserve BakaSU exec/faccessat/stat hooks when KSU_SUSFS selects inline mode.
 # Rebuild after scoping SUSFS root/stat hooks and excluding manual-only fstat return handlers.
 
@@ -270,6 +270,53 @@ jobs:
           printf 'core_patch_exit=%s\ninline_hooks_exit=%s\n' "$core_rc" "$hook_rc" | tee artifacts/patch-status.txt
           test "$hook_rc" -eq 0
           python3 scripts/susfs22_deen_compat.py . artifacts
+          # Enforce the OPEN_REDIRECT procfs predicate/include on legacy Linux 3.18.
+          # The upstream hunk is partially rejected on this tree, so validate it before compiling.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          header_path = Path("include/linux/susfs_def.h")
+          header = header_path.read_text()
+          if not re.search(r"(?m)^#define\s+SUSFS_IS_INODE_OPEN_REDIRECT\s*\(", header):
+              if "static inline bool susfs_is_current_proc_umounted_app" not in header:
+                  raise SystemExit("Cannot backport OPEN_REDIRECT predicate: app-process helper is missing")
+              if "#include <linux/bitops.h>" not in header:
+                  raise SystemExit("Cannot backport OPEN_REDIRECT predicate: bitops.h is missing")
+              guard = "#endif // #ifndef KSU_SUSFS_DEF_H"
+              if guard not in header:
+                  raise SystemExit("Cannot locate SUSFS header guard for OPEN_REDIRECT predicate")
+              macro = """
+          #ifndef AS_FLAGS_OPEN_REDIRECT
+          #define AS_FLAGS_OPEN_REDIRECT 36
+          #endif
+          #ifndef SUSFS_IS_INODE_OPEN_REDIRECT
+          #define SUSFS_IS_INODE_OPEN_REDIRECT(inode) \\
+              ((inode) && \\
+               unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &(inode)->i_state)) && \\
+               susfs_is_current_proc_umounted_app())
+          #endif
+          """
+              header = header.replace(guard, macro + "\n" + guard, 1)
+              header_path.write_text(header)
+          if not re.search(r"(?m)^#define\s+SUSFS_IS_INODE_OPEN_REDIRECT\s*\(", header_path.read_text()):
+              raise SystemExit("OPEN_REDIRECT predicate still absent from include/linux/susfs_def.h")
+
+          proc_path = Path("fs/proc/base.c")
+          proc = proc_path.read_text()
+          anchor = "#include <linux/namei.h>\n"
+          if anchor not in proc:
+              raise SystemExit("Cannot locate stable include anchor in fs/proc/base.c")
+          direct_include = anchor + "#include <linux/susfs_def.h>\n"
+          if direct_include not in proc:
+              proc = proc.replace(anchor, direct_include, 1)
+              proc_path.write_text(proc)
+          if direct_include not in proc_path.read_text():
+              raise SystemExit("OPEN_REDIRECT SUSFS header is not directly included in fs/proc/base.c")
+          print("OPEN_REDIRECT legacy predicate and direct procfs header include verified.")
+          PY
+          grep -q '^#define SUSFS_IS_INODE_OPEN_REDIRECT' include/linux/susfs_def.h
+          grep -q '#include <linux/susfs_def.h>' fs/proc/base.c
           cat artifacts/patch-status.txt
           cat artifacts/deferred-feature-contract.txt
           git diff --check
@@ -443,7 +490,7 @@ jobs:
           Compile/ZIP checks do not prove boot/runtime compatibility. Keep a known-good Boot backup and recovery access.
           NOTE
           cd anykernel
-          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
           unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip
           sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
