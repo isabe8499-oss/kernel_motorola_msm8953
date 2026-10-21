@@ -602,7 +602,7 @@ static unsigned int pidfd_poll(struct file *file, poll_table *wait)
 	poll_wait(file, &pid->wait_pidfd, wait);
 	rcu_read_lock();
 	task = pid_task(pid, PIDTYPE_PID);
-	if (!task || task->exit_state)
+	if (!task || (task->exit_state && thread_group_empty(task)))
 		mask = POLLIN | POLLRDNORM;
 	rcu_read_unlock();
 
