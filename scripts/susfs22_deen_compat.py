@@ -291,6 +291,28 @@ if defs_source.count("#include <linux/bits.h>") == 1:
 elif "#include <linux/bitops.h>" not in defs_source:
     raise SystemExit("SUSFS header has neither linux/bits.h nor linux/bitops.h; review header API")
 
+# The SUSFS 2.2 OPEN_REDIRECT hunk references this inode predicate in procfs,
+# but its header hunk is rejected on this legacy tree. Backport the predicate
+# and its inode-state bit explicitly; fail closed if a conflicting definition exists.
+open_redirect_defs = """
+#ifndef AS_FLAGS_OPEN_REDIRECT
+#define AS_FLAGS_OPEN_REDIRECT 36
+#endif
+#ifndef SUSFS_IS_INODE_OPEN_REDIRECT
+#define SUSFS_IS_INODE_OPEN_REDIRECT(inode) \\
+        ((inode) && \\
+         unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &(inode)->i_state)) && \\
+         susfs_is_current_proc_umounted_app())
+#endif
+"""
+if "SUSFS_IS_INODE_OPEN_REDIRECT" not in defs_source:
+    if "static inline bool susfs_is_current_proc_umounted_app" not in defs_source:
+        raise SystemExit("Cannot safely add OPEN_REDIRECT predicate: expected app-process helper missing")
+    defs_source = defs_source.replace("#endif // #ifndef KSU_SUSFS_DEF_H", open_redirect_defs + "\\n#endif // #ifndef KSU_SUSFS_DEF_H", 1)
+    defs.write_text(defs_source)
+elif "AS_FLAGS_OPEN_REDIRECT" not in defs_source:
+    raise SystemExit("OPEN_REDIRECT predicate exists without its inode-state bit; refusing ambiguous patch")
+
 static_key_paths = [
     "fs/susfs.c",
     "kernel/sys.c",
