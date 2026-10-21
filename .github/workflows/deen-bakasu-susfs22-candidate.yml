@@ -1,4 +1,4 @@
-name: Deen BakaSU + SUSFS v2.2 GCC 4.9 experimental OPEN_REDIRECT stage 2 (#58)
+name: Deen BakaSU + SUSFS v2.2 GCC 4.9 experimental OPEN_REDIRECT stage 2
 # Root fix: preserve BakaSU exec/faccessat/stat hooks when KSU_SUSFS selects inline mode.
 # Rebuild after scoping SUSFS root/stat hooks and excluding manual-only fstat return handlers.
 
@@ -424,7 +424,7 @@ jobs:
           grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y$' out/.config
           grep -E '^(CONFIG_KSU=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
 
-      - name: Build SUSFS stage-1 kernel
+      - name: Build SUSFS experimental OPEN_REDIRECT kernel
         run: |
           set -euo pipefail
           export ARCH=arm64
@@ -443,7 +443,7 @@ jobs:
           find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
           cp bakasu-source-commit.txt artifacts/
           {
-            echo '## Deen BakaSU + SUSFS v2.2 experimental stage-2 (#58) build'
+            echo "## Deen BakaSU + SUSFS v2.2 OPEN_REDIRECT experimental build — Workflow #${GITHUB_RUN_NUMBER}"
             echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP enabled for an experimental compile; OPEN_REDIRECT is requested experimentally; runtime VFS integration is not assumed functional.'
             echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
             cat artifacts/patch-status.txt
@@ -451,17 +451,19 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
 
-      - name: Package experimental TWRP flashable ZIP (SUSFS stage 1)
+      - name: Package experimental TWRP flashable ZIP (OPEN_REDIRECT)
         run: |
           set -euo pipefail
           AK3_COMMIT=020dfeccf9d7e962a48400fc94d3e451df92eead
           git clone https://github.com/osm0sis/AnyKernel3.git anykernel
           git -C anykernel checkout --detach "$AK3_COMMIT"
           cp artifacts/Image.gz-dtb anykernel/Image.gz-dtb
-          cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 BakaSU + SUSFS v2.2 experimental OPEN_REDIRECT stage-2 Workflow #58 kernel
+          RUN_NUMBER="$GITHUB_RUN_NUMBER"
+          ZIP_NAME="Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow${RUN_NUMBER}-TWRP.zip"
+          cat > anykernel/anykernel.sh <<AK3
+          ### Deen XT1941-3 BakaSU + SUSFS v2.2 experimental OPEN_REDIRECT Workflow #${RUN_NUMBER} kernel
           properties() { '
-          kernel.string=Deen BakaSU + SUSFS v2.2 OPEN_REDIRECT stage 2 GCC 4.9 (experimental #58)
+          kernel.string=Deen BakaSU + SUSFS v2.2 OPEN_REDIRECT GCC 4.9 (experimental Workflow #${RUN_NUMBER})
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -481,8 +483,8 @@ jobs:
           dump_boot
           write_boot
           AK3
-          cat > anykernel/SUSFS-STAGE2-OPEN-REDIRECT-WORKFLOW55-EXPERIMENTAL.txt <<'NOTE'
-          EXPERIMENTAL SUSFS v2.2 STAGE-2 OPEN_REDIRECT BUILD (#58)
+          cat > "anykernel/SUSFS-OPEN-REDIRECT-WORKFLOW${RUN_NUMBER}-EXPERIMENTAL.txt" <<NOTE
+          EXPERIMENTAL SUSFS v2.2 OPEN_REDIRECT BUILD (Workflow #${RUN_NUMBER})
           Target: Motorola One Deen / XT1941-3, Linux 3.18.140.
           Keeps the known-working GCC 4.9 BakaSU manual-hook setup.
           Requested SUSFS options: the eight features from Workflow #54 plus OPEN_REDIRECT. Experimental build; compile success does not prove the redirect hook is integrated or safe at runtime.
@@ -490,17 +492,17 @@ jobs:
           Compile/ZIP checks do not prove boot/runtime compatibility. Keep a known-good Boot backup and recovery access.
           NOTE
           cd anykernel
-          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          zip -qr9 "../artifacts/${ZIP_NAME}" . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
-          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip
-          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
-          test -s artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip
+          unzip -t "artifacts/${ZIP_NAME}"
+          sha256sum "artifacts/${ZIP_NAME}" | tee artifacts/flashable-zip-sha256.txt
+          test -s "artifacts/${ZIP_NAME}"
 
       - name: Upload BakaSU GCC 4.9 TWRP package and diagnostics
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: deen-linux-3.18.140-bakasu-susfs22-stage1-gcc49
+          name: deen-linux-3.18.140-bakasu-susfs22-open-redirect-workflow-${{ github.run_number }}
           path: artifacts/
           if-no-files-found: error
           retention-days: 7
