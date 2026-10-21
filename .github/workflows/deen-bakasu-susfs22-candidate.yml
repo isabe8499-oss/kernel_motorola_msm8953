@@ -469,7 +469,7 @@ jobs:
           nm out/vmlinux | grep -q ksu_install_fd
           nm out/vmlinux | grep -q susfs_enable_log
           # Fail the build unless both pidfd syscall entry points are linked.
-          nm out/vmlinux | grep -q ' sys_pidfd_open
+          nm out/vmlinux | grep -q sys_pidfd_open
           nm out/vmlinux | grep -q susfs_spoof_uname
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
@@ -542,7 +542,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-          nm out/vmlinux | grep -q ' sys_pidfd_send_signal
+          nm out/vmlinux | grep -q sys_pidfd_send_signal
           nm out/vmlinux | grep -q susfs_spoof_uname
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
