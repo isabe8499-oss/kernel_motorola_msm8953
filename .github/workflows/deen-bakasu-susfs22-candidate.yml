@@ -281,7 +281,6 @@ jobs:
           files = {
               "fs/exec.c": 5,
               "fs/open.c": 1,
-              "fs/stat.c": 3,
           }
           old = "#ifdef CONFIG_KSU_MANUAL_HOOK"
           new = "#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)"
@@ -290,15 +289,33 @@ jobs:
               s = p.read_text()
               count = s.count(old)
               if count != expected:
-                  raise SystemExit(f"{name}: expected {expected} existing BakaSU hook guards, found {count}; refusing to guess")
-              s = s.replace(old, new)
-              p.write_text(s)
-              print(f"{name}: enabled {count} existing BakaSU hook guards for SUSFS mode")
+                  raise SystemExit(f"{name}: expected {expected} BakaSU root-hook guards, found {count}; refusing to guess")
+              p.write_text(s.replace(old, new))
+              print(f"{name}: enabled {count} hook guards for SUSFS mode")
+          # fs/stat.c has three BakaSU hook guards. Only ksu_handle_stat is
+          # implemented by the SUSFS-mode sucompat; the two *_ret handlers are
+          # manual-hook-only and must remain disabled in SUSFS Inline Hook mode.
+          p = Path("fs/stat.c")
+          s = p.read_text()
+          stat_marker = "extern void ksu_handle_newfstat_ret"
+          if s.count(stat_marker) != 1:
+              raise SystemExit("newfstat return hook marker not unique")
+          pos = s.index(stat_marker)
+          prefix, suffix = s[:pos], s[pos:]
+          count = prefix.count(old)
+          if count != 1:
+              raise SystemExit(f"fs/stat.c: expected one stat hook guard before newfstat_ret, found {count}")
+          prefix = prefix.replace(old, new, 1)
+          s = prefix + suffix
+          if s.count(new) != 1 or s.count(old) != 2:
+              raise SystemExit("fs/stat.c guard layout unexpected; expected 1 SUSFS stat guard and 2 manual-only return guards")
+          p.write_text(s)
+          print("fs/stat.c: ksu_handle_stat enabled for SUSFS; *_ret hooks remain manual-only")
           PY
-          # The selected SUSFS hook mode must keep the legacy BakaSU call sites compiled.
           test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/exec.c)" -eq 5
           test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/open.c)" -eq 1
-          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/stat.c)" -eq 3
+          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/stat.c)" -eq 1
+          test "$(grep -c '#ifdef CONFIG_KSU_MANUAL_HOOK' fs/stat.c)" -eq 2
           grep -q 'ksu_handle_execveat' fs/exec.c
           grep -q 'ksu_handle_post_execveat' fs/exec.c
           grep -q 'ksu_handle_faccessat' fs/open.c
