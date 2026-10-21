@@ -45,7 +45,19 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz-dtb
           gcc -Wall -Wextra -O2 tools/testing/selftests/pidfd/pidfd_open_test.c -o out/pidfd_open_test
 
+      - name: Verify BakaSU and SUSFS base is present
+        id: targetbase
+        run: |
+          if grep -q '^CONFIG_KSU_SUSFS=y' out/.config && \
+             [ -f KernelSU/kernel/Kconfig ] && [ -f fs/susfs.c ]; then
+            echo "target_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "target_ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::This branch lacks the expected BakaSU/SUSFS 2.2 source/config. A flashable ZIP will NOT be produced from this plain kernel tree."
+          fi
+
       - name: Package TWRP-flashable AnyKernel ZIP
+        if: steps.targetbase.outputs.target_ready == 'true'
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git "$RUNNER_TEMP/AnyKernel3"
           cp out/arch/arm64/boot/Image.gz-dtb "$RUNNER_TEMP/AnyKernel3/Image.gz-dtb"
@@ -81,10 +93,10 @@ jobs:
       - name: Upload kernel image and ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: deen-pidfd-kernel-build
+          name: deen-pidfd-build-diagnostic-not-for-flashing
           path: |
             out/arch/arm64/boot/Image.gz-dtb
             out/pidfd_open_test
             Deen-pidfd-backport-AnyKernel3.zip
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
