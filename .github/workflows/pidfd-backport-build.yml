@@ -25,7 +25,8 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev             libncurses5-dev libncursesw5-dev python3 unzip zip wget git
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev \
+            libncurses5-dev libncursesw5-dev python3 unzip zip wget git
 
       - name: Install Android GCC 4.9 toolchain
         run: |
@@ -40,6 +41,7 @@ jobs:
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" deen_defconfig
           make -j"$(nproc)" O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
+          gcc -Wall -Wextra -O2 tools/testing/selftests/pidfd/pidfd_open_test.c -o out/pidfd_open_test
 
       - name: Package TWRP-flashable AnyKernel ZIP
         run: |
@@ -47,14 +49,32 @@ jobs:
           cp out/arch/arm64/boot/Image.gz-dtb "$RUNNER_TEMP/AnyKernel3/Image.gz-dtb"
           cat > "$RUNNER_TEMP/AnyKernel3/anykernel.sh" <<'AK'
           #!/sbin/sh
-          # AnyKernel3 - Motorola One (deen), kernel-only update
-          . tools/ak3-core.sh
-          dump_boot
-          write_boot
+          # AnyKernel3 kernel-only installer for Motorola One (deen).
+          properties() { '
+          kernel.string=Deen pidfd backport (Linux 3.18.140)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=0
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=deen
+          device.name2=deen
+          supported.versions=
+          supported.patchlevels=
+          '; }
+          BLOCK=boot;
+          IS_SLOT_DEVICE=1;
+          RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
+          . tools/ak3-core.sh;
+          dump_boot;
+          write_boot;
           AK
+          chmod 0755 "$RUNNER_TEMP/AnyKernel3/anykernel.sh"
           cd "$RUNNER_TEMP/AnyKernel3"
           zip -r9 "$GITHUB_WORKSPACE/Deen-pidfd-backport-AnyKernel3.zip" . -x '.git/*' 'README.md' '.*'
           test -s "$GITHUB_WORKSPACE/Deen-pidfd-backport-AnyKernel3.zip"
+          unzip -l "$GITHUB_WORKSPACE/Deen-pidfd-backport-AnyKernel3.zip"
 
       - name: Upload kernel image and ZIP
         uses: actions/upload-artifact@v4
@@ -62,6 +82,7 @@ jobs:
           name: deen-pidfd-kernel-build
           path: |
             out/arch/arm64/boot/Image.gz-dtb
+            out/pidfd_open_test
             Deen-pidfd-backport-AnyKernel3.zip
           if-no-files-found: error
           retention-days: 14
