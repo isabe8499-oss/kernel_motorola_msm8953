@@ -738,7 +738,7 @@ seccomp.write_text(seccomp_text)
     "KSU_SUSFS_SUS_PATH=y\n"
     "KSU_SUSFS_SUS_MOUNT=y\n"
     "KSU_SUSFS_SUS_KSTAT=y\n"
-    "KSU_SUSFS_OPEN_REDIRECT=n\n"
+    "KSU_SUSFS_OPEN_REDIRECT=y (experimental compile flag; legacy path_openat redirect integration remains deferred/unverified)\n"
     "KSU_SUSFS_SUS_MAP=y\n"
     "KSU_SUSFS_SPOOF_UNAME=y\n"
     "KSU_SUSFS_ENABLE_LOG=y\n"
