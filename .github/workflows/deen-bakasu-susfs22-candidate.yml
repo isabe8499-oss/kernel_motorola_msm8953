@@ -422,7 +422,7 @@ jobs:
             --enable KSU \
             --enable KSU_MANUAL_HOOK \
             --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK \
-            --disable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
+            --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK \
             --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK \
             --enable KSU_SUSFS \
             --disable KSU_SUSFS_INLINE_HOOK \
@@ -440,7 +440,7 @@ jobs:
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK is not set$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q '^# CONFIG_KSU_SUSFS_INLINE_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
@@ -459,7 +459,7 @@ jobs:
           grep -q '^KSU_SUSFS_SUS_KSTAT=n$' artifacts/deferred-feature-contract.txt
           grep -q '^KSU_SUSFS_OPEN_REDIRECT=n$' artifacts/deferred-feature-contract.txt
           grep -q '^KSU_SUSFS_SUS_MAP=n$' artifacts/deferred-feature-contract.txt
-          grep -E '^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
+          grep -E '^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
 
       - name: Build BakaSU manual-hook + SUSFS kernel
         run: |
