@@ -1,4 +1,4 @@
-name: Deen BakaSU + SUSFS v2.2 GCC 4.9 manual-hook stage 1
+name: Deen BakaSU + SUSFS v2.2 + pidfd backport GCC 4.9
 
 on:
   push:
