@@ -863,6 +863,11 @@ if "#include <linux/susfs_def.h>" not in mm:
     if mm.count(inc) != 1:
         raise SystemExit("task_mmu.c OPEN_REDIRECT include anchor mismatch")
     mm = mm.replace(inc, inc + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#include <linux/srcu.h>\n#endif\n", 1)
+if "#include <linux/srcu.h>" not in mm:
+    include_anchor = "#include <linux/mm_inline.h>\\n"
+    if mm.count(include_anchor) != 1:
+        raise SystemExit("task_mmu.c SRCU include anchor mismatch")
+    mm = mm.replace(include_anchor, include_anchor + "#include <linux/srcu.h>\\n", 1)
 if "susfs_open_redirect_spoof_show_map_vma_srcu" not in mm:
     anchor = "static void\nshow_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)\n"
     proto = """#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
