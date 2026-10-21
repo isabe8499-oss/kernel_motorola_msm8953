@@ -601,7 +601,12 @@ static unsigned int pidfd_poll(struct file *file, poll_table *wait)
 
 	poll_wait(file, &pid->wait_pidfd, wait);
 	rcu_read_lock();
-	task = pid_task(pid, PIDTYPE_PID);
+	/*
+	 * A pidfd refers to a process (thread group), not an individual task.
+	 * The leader's PIDTYPE_PID link can disappear while other threads live;
+	 * keep polling against PIDTYPE_TGID so readiness means process exit.
+	 */
+	task = pid_task(pid, PIDTYPE_TGID);
 	if (!task || (task->exit_state && thread_group_empty(task)))
 		mask = POLLIN | POLLRDNORM;
 	rcu_read_unlock();
