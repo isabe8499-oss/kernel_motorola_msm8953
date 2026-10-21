@@ -586,7 +586,7 @@ if "susfs_is_current_proc_umounted()" not in fi:
 \t\t\t\t\t\t\t\tpath.dentry->d_inode->i_sb->s_dev,
 \t\t\t\t\t\t\t\tmark->mask & IN_ALL_EVENTS, mark->ignored_mask);
 \t\t\t\t\t\t\tshow_mark_fhandle(m, path.dentry->d_inode);
-\t\t\t\t\t\t\tseq_putc(m, '\\\\n');
+\t\t\t\t\t\t\tseq_putc(m, '\\n');
 \t\t\t\t\t\t\tpath_put(&path);
 \t\t\t\t\t\t\tkfree(pathname);
 \t\t\t\t\t\t\tiput(inode);
