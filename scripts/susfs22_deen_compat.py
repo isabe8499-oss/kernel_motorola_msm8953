@@ -673,6 +673,248 @@ if "susfs_get_non_sus_mnt_id_from_mnt(mnt)" not in pf:
     pf = pf.replace(old_print, new_print, 1)
 procfd_path.write_text(pf)
 
+
+# Experimental Linux 3.18 OPEN_REDIRECT port. Keep this on a separate branch
+# until the target device passes openat, relative-path, fdinfo, maps and readlink tests.
+# The 3.18 path_openat() API differs from the 4.4 patch; pre-resolve the requested
+# pathname with filename_lookup(), then retry the normal open on the redirected name.
+np = root / "fs/namei.c"
+ns = np.read_text()
+if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in ns:
+    include_anchor = "#include <linux/init_task.h>\n"
+    if ns.count(include_anchor) != 1:
+        raise SystemExit("namei.c OPEN_REDIRECT include anchor mismatch")
+    ns = ns.replace(include_anchor, include_anchor + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#endif\n", 1)
+if "susfs_open_redirect_spoof_do_sys_openat" not in ns:
+    anchor = '#include "mount.h"\n'
+    if ns.count(anchor) != 1:
+        raise SystemExit("namei.c OPEN_REDIRECT prototype anchor mismatch")
+    ns = ns.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\nextern struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);\n#endif\n", 1)
+do_filp_anchor = """\tstruct nameidata nd;
+\tint flags = op->lookup_flags;
+\tstruct file *filp;
+
+\tfilp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_RCU);"""
+do_filp_replacement = """\tstruct nameidata nd;
+\tint flags = op->lookup_flags;
+\tstruct file *filp;
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+\tstruct filename *redirected_name = NULL;
+\tstruct filename *open_name = pathname;
+\tstruct nameidata check_nd;
+\tunsigned int check_flags = flags & ~(LOOKUP_OPEN | LOOKUP_CREATE | LOOKUP_EXCL | LOOKUP_PARENT);
+
+\t/*
+\t * Resolve once using the caller's dfd so relative openat() paths are
+\t * handled correctly. filename_lookup() returns a referenced final path;
+\t * the normal open path below still performs the authoritative permission
+\t * and open-flag checks.
+\t */
+\tif (!filename_lookup(dfd, pathname, check_flags, &check_nd)) {
+\t\tstruct inode *inode = check_nd.path.dentry ? check_nd.path.dentry->d_inode : NULL;
+\t\tif (inode && SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode))
+\t\t\tredirected_name = susfs_open_redirect_spoof_do_sys_openat(inode);
+\t\tpath_put(&check_nd.path);
+\t}
+\tif (redirected_name && !IS_ERR(redirected_name))
+\t\topen_name = redirected_name;
+\telse
+\t\tredirected_name = NULL;
+#endif
+
+\tfilp = path_openat(dfd, open_name, &nd, op, flags | LOOKUP_RCU);"""
+if "struct filename *redirected_name = NULL;" not in ns:
+    if ns.count(do_filp_anchor) != 1:
+        raise SystemExit("do_filp_open OPEN_REDIRECT insertion anchor mismatch")
+    ns = ns.replace(do_filp_anchor, do_filp_replacement, 1)
+    # Retry with the same redirected name for -ECHILD and -ESTALE; release after all attempts.
+    ns = ns.replace("filp = path_openat(dfd, pathname, &nd, op, flags);",
+                    "filp = path_openat(dfd, open_name, &nd, op, flags);", 1)
+    ns = ns.replace("filp = path_openat(dfd, pathname, &nd, op, flags | LOOKUP_REVAL);",
+                    "filp = path_openat(dfd, open_name, &nd, op, flags | LOOKUP_REVAL);", 1)
+    ret_anchor = "\treturn filp;\n}\n\nstruct file *do_file_open_root"
+    ret_replacement = """#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+\tif (redirected_name)
+\t\tputname(redirected_name);
+#endif
+\treturn filp;
+}
+
+struct file *do_file_open_root"""
+    if ns.count(ret_anchor) != 1:
+        raise SystemExit("do_filp_open OPEN_REDIRECT cleanup anchor mismatch")
+    ns = ns.replace(ret_anchor, ret_replacement, 1)
+
+# Reverse disguise for readlink("/proc/<pid>/fd/*", exe, cwd and root).
+bp = root / "fs/proc/base.c"
+bs = bp.read_text()
+if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in bs:
+    inc = "#include <linux/cpufreq_times.h>\n"
+    if bs.count(inc) != 1:
+        raise SystemExit("proc/base.c OPEN_REDIRECT include anchor mismatch")
+    bs = bs.replace(inc, inc + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#endif\n", 1)
+if "susfs_open_redirect_spoof_do_proc_readlink" not in bs:
+    anchor = "static int do_proc_readlink(struct path *path, char __user *buffer, int buflen)\n"
+    proto = "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\nextern int susfs_open_redirect_spoof_do_proc_readlink(struct inode *inode, char *tmp_buf, int buflen);\n#endif\n\n"
+    if bs.count(anchor) != 1:
+        raise SystemExit("proc/base.c readlink prototype anchor mismatch")
+    bs = bs.replace(anchor, proto + anchor, 1)
+readlink_anchor = """\tif (!tmp)
+\t\treturn -ENOMEM;
+
+\tpathname = d_path(path, tmp, PAGE_SIZE);"""
+readlink_replacement = """\tif (!tmp)
+\t\treturn -ENOMEM;
+
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+\tif (SUSFS_IS_INODE_OPEN_REDIRECT(path->dentry->d_inode) &&
+\t    !susfs_open_redirect_spoof_do_proc_readlink(path->dentry->d_inode, tmp, buflen)) {
+\t\tlen = strlen(tmp);
+\t\tif (len > buflen)
+\t\t\tlen = buflen;
+\t\tif (copy_to_user(buffer, tmp, len))
+\t\t\tlen = -EFAULT;
+\t\tgoto out;
+\t}
+#endif
+\tpathname = d_path(path, tmp, PAGE_SIZE);"""
+if "susfs_open_redirect_spoof_do_proc_readlink(path->dentry->d_inode, tmp, buflen)" not in bs:
+    if bs.count(readlink_anchor) != 1:
+        raise SystemExit("proc/base.c readlink insertion anchor mismatch")
+    bs = bs.replace(readlink_anchor, readlink_replacement, 1)
+bp.write_text(bs)
+
+# Reverse disguise for fdinfo (mnt_id + inode number).
+pf_path = root / "fs/proc/fd.c"
+pf = pf_path.read_text()
+if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in pf:
+    inc = "#include <linux/proc_fs.h>\n"
+    if pf.count(inc) != 1:
+        raise SystemExit("proc/fd.c OPEN_REDIRECT include anchor mismatch")
+    pf = pf.replace(inc, inc + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#endif\n", 1)
+if "susfs_open_redirect_spoof_seq_show" not in pf:
+    anchor = '#include "fd.h"\n'
+    proto = '#include "fd.h"\n#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\nextern int susfs_open_redirect_spoof_seq_show(struct inode *inode, int *out_mnt_id, unsigned long *out_ino);\n#endif\n'
+    if pf.count(anchor) != 1:
+        raise SystemExit("proc/fd.c OPEN_REDIRECT prototype anchor mismatch")
+    pf = pf.replace(anchor, proto, 1)
+fd_print_anchor = """\t\tseq_printf(m, "pos:\\\\t%lli\\\\nflags:\\\\t0%o\\\\nmnt_id:\\\\t%i\\\\nino:\\\\t%lu\\\\n",
+\t\t\t(long long)file->f_pos, f_flags,
+\t\t\treal_mount(file->f_path.mnt)->mnt_id, file_inode(file)->i_ino);
+bypass_orig_flow:"""
+fd_print_replacement = """#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+\t\tif (SUSFS_IS_INODE_OPEN_REDIRECT(file_inode(file))) {
+\t\t\tint spoofed_mnt_id = 0;
+\t\t\tunsigned long spoofed_ino = 0;
+\t\t\tif (!susfs_open_redirect_spoof_seq_show(file_inode(file), &spoofed_mnt_id, &spoofed_ino)) {
+\t\t\t\tseq_printf(m, "pos:\\\\t%lli\\\\nflags:\\\\t0%o\\\\nmnt_id:\\\\t%i\\\\nino:\\\\t%lu\\\\n",
+\t\t\t\t\t(long long)file->f_pos, f_flags, spoofed_mnt_id, spoofed_ino);
+\t\t\t\tgoto bypass_orig_flow;
+\t\t\t}
+\t\t}
+#endif
+\t\tseq_printf(m, "pos:\\\\t%lli\\\\nflags:\\\\t0%o\\\\nmnt_id:\\\\t%i\\\\nino:\\\\t%lu\\\\n",
+\t\t\t(long long)file->f_pos, f_flags,
+\t\t\treal_mount(file->f_path.mnt)->mnt_id, file_inode(file)->i_ino);
+bypass_orig_flow:"""
+if "susfs_open_redirect_spoof_seq_show(file_inode(file)" not in pf:
+    if pf.count(fd_print_anchor) != 1:
+        raise SystemExit("proc/fd.c fdinfo reverse-spoof anchor mismatch")
+    pf = pf.replace(fd_print_anchor, fd_print_replacement, 1)
+pf_path.write_text(pf)
+
+# Reverse disguise in /proc/<pid>/maps, preserving SRCU protection while the
+# spoofed pathname is emitted from the rule table.
+mm_path = root / "fs/proc/task_mmu.c"
+mm = mm_path.read_text()
+if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in mm:
+    inc = "#include <linux/mm_inline.h>\n"
+    if mm.count(inc) != 1:
+        raise SystemExit("task_mmu.c OPEN_REDIRECT include anchor mismatch")
+    mm = mm.replace(inc, inc + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#include <linux/srcu.h>\n#endif\n", 1)
+if "susfs_open_redirect_spoof_show_map_vma_srcu" not in mm:
+    anchor = "static void\nshow_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)\n"
+    proto = """#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+extern struct srcu_struct susfs_srcu_open_redirect;
+extern int susfs_open_redirect_spoof_show_map_vma_srcu(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char **out_spoofed_name);
+#endif
+
+"""
+    if mm.count(anchor) != 1:
+        raise SystemExit("task_mmu.c show_map_vma prototype anchor mismatch")
+    mm = mm.replace(anchor, proto + anchor, 1)
+map_anchor = """\tif (file) {
+\t\tstruct inode *inode = file_inode(vma->vm_file);
+\t\tdev = inode->i_sb->s_dev;
+\t\tino = inode->i_ino;
+\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+\t}"""
+map_replacement = """\tif (file) {
+\t\tstruct inode *inode = file_inode(vma->vm_file);
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+\t\tif (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
+\t\t\tchar *spoofed_name = NULL;
+\t\t\tint srcu_idx = srcu_read_lock(&susfs_srcu_open_redirect);
+\t\t\tif (!susfs_open_redirect_spoof_show_map_vma_srcu(inode, &ino, &dev, &spoofed_name)) {
+\t\t\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+\t\t\t\tstart = vma->vm_start;
+\t\t\t\tend = vma->vm_end;
+\t\t\t\tshow_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
+\t\t\t\tseq_pad(m, ' ');
+\t\t\t\tif (spoofed_name)
+\t\t\t\t\tseq_puts(m, spoofed_name);
+\t\t\t\tseq_putc(m, '\\\\n');
+\t\t\t\tsrcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);
+\t\t\t\treturn;
+\t\t\t}
+\t\t\tsrcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);
+\t\t}
+#endif
+\t\tdev = inode->i_sb->s_dev;
+\t\tino = inode->i_ino;
+\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+\t}"""
+if "susfs_open_redirect_spoof_show_map_vma_srcu(inode" not in mm:
+    if mm.count(map_anchor) != 1:
+        raise SystemExit("task_mmu.c maps reverse-spoof anchor mismatch")
+    mm = mm.replace(map_anchor, map_replacement, 1)
+mm_path.write_text(mm)
+
+# Return the target filesystem's statfs snapshot for a redirected inode.
+sp = root / "fs/statfs.c"
+st = sp.read_text()
+if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in st:
+    inc = "#include <linux/uaccess.h>\n"
+    if st.count(inc) != 1:
+        raise SystemExit("statfs.c OPEN_REDIRECT include anchor mismatch")
+    st = st.replace(inc, inc + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#endif\n", 1)
+if "susfs_open_redirect_spoof_vfs_statfs" not in st:
+    anchor = "int vfs_statfs(struct path *path, struct kstatfs *buf)\n"
+    proto = "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\nextern int susfs_open_redirect_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf);\n#endif\n\n"
+    if st.count(anchor) != 1:
+        raise SystemExit("statfs.c OPEN_REDIRECT prototype anchor mismatch")
+    st = st.replace(anchor, proto + anchor, 1)
+stat_anchor = """int vfs_statfs(struct path *path, struct kstatfs *buf)
+{
+\tint error;
+
+\terror = statfs_by_dentry(path->dentry, buf);"""
+stat_replacement = """int vfs_statfs(struct path *path, struct kstatfs *buf)
+{
+\tint error;
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+\tif (path->dentry && path->dentry->d_inode &&
+\t    SUSFS_IS_INODE_OPEN_REDIRECT(path->dentry->d_inode) &&
+\t    !susfs_open_redirect_spoof_vfs_statfs(path->dentry->d_inode, buf))
+\t\treturn 0;
+#endif
+\terror = statfs_by_dentry(path->dentry, buf);"""
+if "susfs_open_redirect_spoof_vfs_statfs(path->dentry->d_inode, buf)" not in st:
+    if st.count(stat_anchor) != 1:
+        raise SystemExit("statfs.c reverse-spoof insertion anchor mismatch")
+    st = st.replace(stat_anchor, stat_replacement, 1)
+sp.write_text(st)
+
 # Preserve every rejected hunk verbatim, then remove only the allowlisted
 # .rej files because the candidate profile explicitly disables those features.
 manifest = []
