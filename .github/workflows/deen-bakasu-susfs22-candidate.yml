@@ -352,11 +352,11 @@ jobs:
             --disable KSU_MANUAL_HOOK \
             --enable KSU_SUSFS \
             --disable KSU_TRACEPOINT_HOOK \
-            --disable KSU_SUSFS_SUS_PATH \
-            --disable KSU_SUSFS_SUS_MOUNT \
-            --disable KSU_SUSFS_SUS_KSTAT \
+            --enable KSU_SUSFS_SUS_PATH \
+            --enable KSU_SUSFS_SUS_MOUNT \
+            --enable KSU_SUSFS_SUS_KSTAT \
             --disable KSU_SUSFS_OPEN_REDIRECT \
-            --disable KSU_SUSFS_SUS_MAP \
+            --enable KSU_SUSFS_SUS_MAP \
             --enable KSU_SUSFS_SPOOF_UNAME \
             --enable KSU_SUSFS_ENABLE_LOG \
             --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
@@ -366,11 +366,11 @@ jobs:
           grep -q '^# CONFIG_KSU_MANUAL_HOOK is not set$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_MOUNT is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_KSTAT is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y$' out/.config
           grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_MAP is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y$' out/.config
@@ -397,7 +397,7 @@ jobs:
           cp bakasu-source-commit.txt artifacts/
           {
             echo '## Deen BakaSU + SUSFS v2.2 stage-1 build'
-            echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT and SUS_MAP remain disabled.'
+            echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP enabled for an experimental compile; OPEN_REDIRECT remains disabled because its legacy VFS port is incomplete.'
             echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
             cat artifacts/patch-status.txt
             cat artifacts/deferred-feature-contract.txt
