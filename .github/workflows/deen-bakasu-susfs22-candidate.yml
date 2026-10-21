@@ -464,13 +464,16 @@ jobs:
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
-          nm out/vmlinux | grep -q ksu_handle_sys_reboot
-          nm out/vmlinux | grep -q ksu_install_fd
-          nm out/vmlinux | grep -q susfs_enable_log
+          mkdir -p artifacts
+          # Materialize the symbol table once; avoid nm receiving SIGPIPE from grep -q under pipefail.
+          nm out/vmlinux > artifacts/vmlinux-symbols-all.txt
+          grep -q ksu_handle_sys_reboot artifacts/vmlinux-symbols-all.txt
+          grep -q ksu_install_fd artifacts/vmlinux-symbols-all.txt
+          grep -q susfs_enable_log artifacts/vmlinux-symbols-all.txt
           # Fail the build unless both pidfd syscall entry points are linked.
-          nm out/vmlinux | grep -q sys_pidfd_open
-          nm out/vmlinux | grep -q sys_pidfd_send_signal
-          nm out/vmlinux | grep -q susfs_spoof_uname
+          grep -q sys_pidfd_open artifacts/vmlinux-symbols-all.txt
+          grep -q sys_pidfd_send_signal artifacts/vmlinux-symbols-all.txt
+          grep -q susfs_spoof_uname artifacts/vmlinux-symbols-all.txt
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           mkdir -p artifacts/kernel
