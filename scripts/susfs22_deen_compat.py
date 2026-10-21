@@ -779,7 +779,7 @@ np.write_text(ns)
 # Reverse disguise for readlink("/proc/<pid>/fd/*", exe, cwd and root).
 bp = root / "fs/proc/base.c"
 bs = bp.read_text()
-if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in bs:
+if "#include <linux/susfs_def.h>" not in bs:
     inc = "#include <linux/cpufreq_times.h>\n"
     if bs.count(inc) != 1:
         raise SystemExit("proc/base.c OPEN_REDIRECT include anchor mismatch")
@@ -818,7 +818,7 @@ bp.write_text(bs)
 # Reverse disguise for fdinfo (mnt_id + inode number).
 pf_path = root / "fs/proc/fd.c"
 pf = pf_path.read_text()
-if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in pf:
+if "#include <linux/susfs_def.h>" not in pf:
     inc = "#include <linux/proc_fs.h>\n"
     if pf.count(inc) != 1:
         raise SystemExit("proc/fd.c OPEN_REDIRECT include anchor mismatch")
@@ -858,7 +858,7 @@ pf_path.write_text(pf)
 # spoofed pathname is emitted from the rule table.
 mm_path = root / "fs/proc/task_mmu.c"
 mm = mm_path.read_text()
-if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in mm:
+if "#include <linux/susfs_def.h>" not in mm:
     inc = "#include <linux/mm_inline.h>\n"
     if mm.count(inc) != 1:
         raise SystemExit("task_mmu.c OPEN_REDIRECT include anchor mismatch")
@@ -908,7 +908,7 @@ mm_path.write_text(mm)
 # Return the target filesystem's statfs snapshot for a redirected inode.
 sp = root / "fs/statfs.c"
 st = sp.read_text()
-if "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>" not in st:
+if "#include <linux/susfs_def.h>" not in st:
     inc = "#include <linux/uaccess.h>\n"
     if st.count(inc) != 1:
         raise SystemExit("statfs.c OPEN_REDIRECT include anchor mismatch")
