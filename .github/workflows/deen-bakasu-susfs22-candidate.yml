@@ -1,5 +1,6 @@
 name: Deen BakaSU + SUSFS v2.2 GCC 4.9 manual-hook stage 1
 # Root fix: preserve BakaSU exec/faccessat/stat hooks when KSU_SUSFS selects inline mode.
+# Rebuild after scoping SUSFS root/stat hooks and excluding manual-only fstat return handlers.
 
 on:
   push:
