@@ -449,7 +449,7 @@ jobs:
           selected = []
           for span in candidates:
               i, j, replacement = span
-              if not any(k >= i and l <= j and (k, l) != (i, j, replacement) for k, l, _ in candidates):
+              if not any(k >= i and l <= j and (k, l) != (i, j) for k, l, _ in candidates):
                   selected.append(span)
           for i, j, replacement in selected:
               lines[i] = replacement
