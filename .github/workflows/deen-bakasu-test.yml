@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - deen-bakasu-manual-hook-test
+      - backport/pidfd-bakasu-susfs22
   workflow_dispatch:
 
 permissions:
@@ -265,11 +266,13 @@ jobs:
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
+          gcc -Wall -Wextra -O2 tools/testing/selftests/pidfd/pidfd_open_test.c -o out/pidfd_open_test
           # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
           nm out/vmlinux | grep -q ksu_handle_sys_reboot
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image.gz-dtb artifacts/
           cp out/.config artifacts/kernel.config
+          cp out/pidfd_open_test artifacts/
           nm out/vmlinux | grep -E 'ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/bakasu-symbols.txt
           find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
           cp bakasu-source-commit.txt artifacts/
