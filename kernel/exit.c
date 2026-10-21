@@ -24,6 +24,7 @@
 #include <linux/binfmts.h>
 #include <linux/nsproxy.h>
 #include <linux/pid_namespace.h>
+#include <linux/pid.h>
 #include <linux/ptrace.h>
 #include <linux/profile.h>
 #include <linux/mount.h>
@@ -64,8 +65,12 @@ static void exit_mm(struct task_struct *tsk);
 
 static void __unhash_process(struct task_struct *p, bool group_dead)
 {
+	struct pid *pid = task_pid(p);
+
 	nr_threads--;
 	detach_pid(p, PIDTYPE_PID);
+	/* Wake pidfd pollers after the task PID is detached. */
+	wake_up_all(&pid->wait_pidfd);
 	if (group_dead) {
 		detach_pid(p, PIDTYPE_PGID);
 		detach_pid(p, PIDTYPE_SID);
