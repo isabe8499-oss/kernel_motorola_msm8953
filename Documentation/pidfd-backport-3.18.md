@@ -13,9 +13,9 @@ and `kernel/signal.c`. This first port supports thread-group leaders only.
   `pidfd_send_signal` using this tree's legacy `struct siginfo`.
 - `include/uapi/asm-generic/unistd.h`: registers syscall numbers 424 and 434.
 - `arch/arm64/include/asm/unistd32.h` and `arch/arm64/include/asm/unistd.h`:
-  register compat syscall entries and extend the compat table size.
+  register the AArch32 syscall entries and update the compat syscall count.
 - `include/linux/syscalls.h`: declares syscall entry points.
-- `tools/testing/selftests/pidfd_open_test.c`: runtime smoke test.
+- `tools/testing/selftests/pidfd/pidfd_open_test.c`: runtime smoke test.
 
 ## Validation status
 
