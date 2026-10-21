@@ -642,8 +642,12 @@ SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
 		return -ESRCH;
 
 	rcu_read_lock();
-	if (!pid_task(p, PIDTYPE_TGID))
-		ret = -EINVAL;
+	{
+		struct task_struct *task = pid_task(p, PIDTYPE_PID);
+
+		if (!task || task != task->group_leader)
+			ret = -EINVAL;
+	}
 	rcu_read_unlock();
 
 	fd = ret ? ret : pidfd_create(p);
