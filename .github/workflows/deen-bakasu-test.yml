@@ -28,6 +28,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio
 
+      - name: Install Android ARM64 test toolchain
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch master https://github.com/KudProject/aarch64-linux-android-4.9.git android-toolchain
+          test -x android-toolchain/bin/aarch64-linux-android-gcc
+          android-toolchain/bin/aarch64-linux-android-gcc --version | sed -n '1p'
+
       - name: Integrate BakaSU source
         run: |
           set -euo pipefail
@@ -269,8 +276,13 @@ jobs:
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
-          gcc -Wall -Wextra -O2 tools/testing/selftests/pidfd/pidfd_open_test.c -o out/pidfd_open_test
-          # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
+          # Build a device-runnable Android ARM64 test binary, not a host/glibc executable.
+          android-toolchain/bin/aarch64-linux-android-gcc -Wall -Wextra -Werror -O2 \
+            tools/testing/selftests/pidfd/pidfd_open_test.c -o out/pidfd_open_test
+          readelf -h out/pidfd_open_test | grep -q 'AArch64'
+          # The linked kernel must contain both pidfd syscall entry points and BakaSU driver discovery.
+          nm out/vmlinux | grep -q sys_pidfd_open
+          nm out/vmlinux | grep -q sys_pidfd_send_signal
           nm out/vmlinux | grep -q ksu_handle_sys_reboot
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image.gz-dtb artifacts/
