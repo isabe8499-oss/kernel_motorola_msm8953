@@ -6,7 +6,8 @@
  */
 #define _GNU_SOURCE
 #include <errno.h>
-#include <stdio.h>\n#include <string.h>
+#include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 
