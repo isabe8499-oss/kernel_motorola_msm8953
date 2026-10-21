@@ -2,6 +2,7 @@
 #define _LINUX_PID_H
 
 #include <linux/rcupdate.h>
+#include <linux/wait.h>
 
 enum pid_type
 {
@@ -62,11 +63,18 @@ struct pid
 	unsigned int level;
 	/* lists of tasks that use this pid */
 	struct hlist_head tasks[PIDTYPE_MAX];
+	/* Wait queue used by pidfd poll() to observe process exit. */
+	wait_queue_head_t wait_pidfd;
 	struct rcu_head rcu;
 	struct upid numbers[1];
 };
 
 extern struct pid init_struct_pid;
+
+struct file;
+struct file_operations;
+extern const struct file_operations pidfd_fops;
+extern struct pid *pidfd_pid(const struct file *file);
 
 struct pid_link
 {
