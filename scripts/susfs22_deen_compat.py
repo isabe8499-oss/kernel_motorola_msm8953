@@ -29,11 +29,11 @@ deferred_dir.mkdir(parents=True, exist_ok=True)
 # allowlisted candidate profile; review the source hunks before changing this.
 deferred = {
     "fs/namei.c.rej": "SUS_PATH adapted to Linux 3.18; OPEN_REDIRECT remains deferred",
-    "fs/namespace.c.rej": "SUS_MOUNT code adapted but disabled for safe reboot-loop triage",
+    "fs/namespace.c.rej": "SUS_MOUNT code adapted for Linux 3.18; enabled only in staged candidate build",
     "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures and inode spoof adapted for Linux 3.18",
     "fs/proc/base.c.rej": "OPEN_REDIRECT integration deferred",
     "fs/proc/fd.c.rej": "SUS_MOUNT proc-fd output adapted for Linux 3.18",
-    "fs/proc/task_mmu.c.rej": "SUS_MAP show_smap hunk adapted to Linux 3.18",
+    "fs/proc/task_mmu.c.rej": "SUS_MAP show_smap hunk adapted to Linux 3.18; enabled only in staged candidate build",
     "fs/readdir.c.rej": "SUS_PATH directory enumeration hook deferred",
 }
 found = {
@@ -682,17 +682,17 @@ for rel, reason in deferred.items():
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     if rel == "fs/namei.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/readdir.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/namespace.c.rej":
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT namespace declarations adapted for Linux 3.18")
     elif rel == "fs/notify/fdinfo.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT fdinfo code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT fdinfo code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/proc/fd.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/proc/task_mmu.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP code adapted for Linux 3.18; enabled only in staged candidate build")
     else:
         manifest.append(f"{rel}\tDEFERRED\t{reason}")
     src.unlink()
@@ -745,16 +745,16 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 partial compatibility profile — candidate keeps path/VFS hiding features disabled; build success is not runtime/boot validation.\n"
-    "KSU_SUSFS_SUS_PATH=n\n"
-    "KSU_SUSFS_SUS_MOUNT=n\n"
-    "KSU_SUSFS_SUS_KSTAT=n\n"
-    "KSU_SUSFS_OPEN_REDIRECT=n\n"
-    "KSU_SUSFS_SUS_MAP=n\n"
-    "KSU_SUSFS_SPOOF_UNAME=y\n"
-    "KSU_SUSFS_ENABLE_LOG=y\n"
-    "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y\n"
-    "KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y\n"
+    "SUSFS v2.2 Linux 3.18 experimental compatibility profile — SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP are enabled after compatibility adaptations; OPEN_REDIRECT remains deferred because its Linux 3.18 VFS/proc integration is not implemented. Build success is not runtime/boot validation.\\n"
+    "KSU_SUSFS_SUS_PATH=y\\n"
+    "KSU_SUSFS_SUS_MOUNT=y\\n"
+    "KSU_SUSFS_SUS_KSTAT=y\\n"
+    "KSU_SUSFS_OPEN_REDIRECT=n\\n"
+    "KSU_SUSFS_SUS_MAP=y\\n"
+    "KSU_SUSFS_SPOOF_UNAME=y\\n"
+    "KSU_SUSFS_ENABLE_LOG=y\\n"
+    "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y\\n"
+    "KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y\\n"
 )
 (artifacts / "hunk-disposition.tsv").write_text("\n".join(manifest) + "\n")
 (artifacts / "patch-status.txt").write_text(
