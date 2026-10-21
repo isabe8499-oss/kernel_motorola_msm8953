@@ -1,4 +1,4 @@
-name: Deen BakaSU + SUSFS v2.2 GCC 4.9 manual-hook stage 1
+name: Deen BakaSU + SUSFS v2.2 GCC 4.9 experimental OPEN_REDIRECT stage 2 (#55)
 # Root fix: preserve BakaSU exec/faccessat/stat hooks when KSU_SUSFS selects inline mode.
 # Rebuild after scoping SUSFS root/stat hooks and excluding manual-only fstat return handlers.
 
@@ -355,7 +355,7 @@ jobs:
             --enable KSU_SUSFS_SUS_PATH \
             --enable KSU_SUSFS_SUS_MOUNT \
             --enable KSU_SUSFS_SUS_KSTAT \
-            --disable KSU_SUSFS_OPEN_REDIRECT \
+            --enable KSU_SUSFS_OPEN_REDIRECT \
             --enable KSU_SUSFS_SUS_MAP \
             --enable KSU_SUSFS_SPOOF_UNAME \
             --enable KSU_SUSFS_ENABLE_LOG \
@@ -369,7 +369,7 @@ jobs:
           grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y$' out/.config
@@ -396,8 +396,8 @@ jobs:
           find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
           cp bakasu-source-commit.txt artifacts/
           {
-            echo '## Deen BakaSU + SUSFS v2.2 stage-1 build'
-            echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP enabled for an experimental compile; OPEN_REDIRECT remains disabled because its legacy VFS port is incomplete.'
+            echo '## Deen BakaSU + SUSFS v2.2 experimental stage-2 (#55) build'
+            echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP enabled for an experimental compile; OPEN_REDIRECT is requested experimentally; runtime VFS integration is not assumed functional.'
             echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
             cat artifacts/patch-status.txt
             cat artifacts/deferred-feature-contract.txt
@@ -412,9 +412,9 @@ jobs:
           git -C anykernel checkout --detach "$AK3_COMMIT"
           cp artifacts/Image.gz-dtb anykernel/Image.gz-dtb
           cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 BakaSU + SUSFS v2.2 stage-1 kernel
+          ### Deen XT1941-3 BakaSU + SUSFS v2.2 experimental OPEN_REDIRECT stage-2 Workflow #55 kernel
           properties() { '
-          kernel.string=Deen BakaSU + SUSFS v2.2 stage 1 GCC 4.9 (experimental)
+          kernel.string=Deen BakaSU + SUSFS v2.2 OPEN_REDIRECT stage 2 GCC 4.9 (experimental #55)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -434,20 +434,20 @@ jobs:
           dump_boot
           write_boot
           AK3
-          cat > anykernel/SUSFS-STAGE1-EXPERIMENTAL.txt <<'NOTE'
-          EXPERIMENTAL SUSFS v2.2 STAGE-1 BUILD
+          cat > anykernel/SUSFS-STAGE2-OPEN-REDIRECT-WORKFLOW55-EXPERIMENTAL.txt <<'NOTE'
+          EXPERIMENTAL SUSFS v2.2 STAGE-2 OPEN_REDIRECT BUILD (#55)
           Target: Motorola One Deen / XT1941-3, Linux 3.18.140.
           Keeps the known-working GCC 4.9 BakaSU manual-hook setup.
-          Enabled SUSFS options: spoof uname, logging, hide SUSFS symbols, spoof cmdline/bootconfig.
-          Disabled SUSFS options: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SUS_MAP.
+          Requested SUSFS options: the eight features from Workflow #54 plus OPEN_REDIRECT. Experimental build; compile success does not prove the redirect hook is integrated or safe at runtime.
+          OPEN_REDIRECT integration remains experimental and requires runtime verification; retain Workflow #54 as fallback.
           Compile/ZIP checks do not prove boot/runtime compatibility. Keep a known-good Boot backup and recovery access.
           NOTE
           cd anykernel
-          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
-          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
-          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
-          test -s artifacts/Deen-BakaSU-SUSFS22-Stage1-GCC49-TWRP.zip
+          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip
+          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
+          test -s artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip
 
       - name: Upload BakaSU GCC 4.9 TWRP package and diagnostics
         if: success()
