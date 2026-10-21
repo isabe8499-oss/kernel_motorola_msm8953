@@ -718,12 +718,12 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 partial compatibility profile — SUS_PATH/SUS_MOUNT/SUS_KSTAT/SUS_MAP enabled and compile-tested only; runtime/boot unverified\n"
-    "KSU_SUSFS_SUS_PATH=y\n"
-    "KSU_SUSFS_SUS_MOUNT=y\n"
-    "KSU_SUSFS_SUS_KSTAT=y\n"
+    "SUSFS v2.2 Linux 3.18 partial compatibility profile — candidate keeps path/VFS hiding features disabled; build success is not runtime/boot validation.\n"
+    "KSU_SUSFS_SUS_PATH=n\n"
+    "KSU_SUSFS_SUS_MOUNT=n\n"
+    "KSU_SUSFS_SUS_KSTAT=n\n"
     "KSU_SUSFS_OPEN_REDIRECT=n\n"
-    "KSU_SUSFS_SUS_MAP=y\n"
+    "KSU_SUSFS_SUS_MAP=n\n"
     "KSU_SUSFS_SPOOF_UNAME=y\n"
     "KSU_SUSFS_ENABLE_LOG=y\n"
     "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y\n"
