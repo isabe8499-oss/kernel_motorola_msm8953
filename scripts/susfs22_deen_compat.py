@@ -891,7 +891,7 @@ map_replacement = """\tif (file) {
 \t\t\t\tseq_pad(m, ' ');
 \t\t\t\tif (spoofed_name)
 \t\t\t\t\tseq_puts(m, spoofed_name);
-\t\t\t\tseq_putc(m, '\\\\n');
+\t\t\t\tseq_putc(m, '\\n');
 \t\t\t\tsrcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);
 \t\t\t\treturn;
 \t\t\t}
