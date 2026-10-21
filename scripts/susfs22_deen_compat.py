@@ -683,8 +683,8 @@ ns = np.read_text()
 if "#include <linux/susfs_def.h>" not in ns:
     include_anchor = "#include <asm/uaccess.h>\n"
     if ns.count(include_anchor) != 1:
+        raise SystemExit("namei.c OPEN_REDIRECT include anchor mismatch")
     ns = ns.replace(include_anchor, include_anchor + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n#include <linux/susfs_def.h>\n#endif\n", 1)
-    ns = ns.replace(include_anchor, include_anchor + "#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\\n#include <linux/susfs_def.h>\\n#endif\\n", 1)
 if "susfs_open_redirect_spoof_do_sys_openat" not in ns:
     anchor = '#include "mount.h"\n'
     if ns.count(anchor) != 1:
