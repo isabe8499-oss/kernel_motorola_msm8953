@@ -5,6 +5,9 @@ on:
     branches:
       - deen-bakasu-manual-hook-test
       - backport/pidfd-bakasu-susfs22
+  pull_request:
+    branches:
+      - deen-bakasu-susfs22-root-preserve
   workflow_dispatch:
 
 permissions:
