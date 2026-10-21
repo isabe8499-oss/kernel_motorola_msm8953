@@ -278,48 +278,56 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          files = {
-              "fs/exec.c": 5,
-              "fs/open.c": 1,
-          }
+
           old = "#ifdef CONFIG_KSU_MANUAL_HOOK"
           new = "#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)"
-          for name, expected in files.items():
+
+          # The five legacy execve guards and one faccessat guard must stay
+          # compiled when SUSFS mode replaces the mutually exclusive manual mode.
+          for name, expected in (("fs/exec.c", 5), ("fs/open.c", 1)):
               p = Path(name)
               s = p.read_text()
               count = s.count(old)
               if count != expected:
-                  raise SystemExit(f"{name}: expected {expected} BakaSU root-hook guards, found {count}; refusing to guess")
+                  raise SystemExit(f"{name}: expected {expected} manual-hook guards, found {count}")
               p.write_text(s.replace(old, new))
-              print(f"{name}: enabled {count} hook guards for SUSFS mode")
-          # fs/stat.c has three BakaSU hook guards. Only ksu_handle_stat is
-          # implemented by the SUSFS-mode sucompat; the two *_ret handlers are
-          # manual-hook-only and must remain disabled in SUSFS Inline Hook mode.
+              print(f"{name}: widened {count} BakaSU root-hook guards")
+
+          # In fs/stat.c only ksu_handle_stat is part of SUSFS mode. The legacy
+          # ksu_handle_{newfstat_ret,fstat64_ret} functions do not exist when
+          # KSU_MANUAL_HOOK is deselected, so their calls must remain manual-only.
           p = Path("fs/stat.c")
           s = p.read_text()
-          stat_marker = "extern void ksu_handle_newfstat_ret"
-          if s.count(stat_marker) != 1:
-              raise SystemExit("newfstat return hook marker not unique")
-          pos = s.index(stat_marker)
-          prefix, suffix = s[:pos], s[pos:]
-          count = prefix.count(old)
-          if count != 1:
-              raise SystemExit(f"fs/stat.c: expected one stat hook guard before newfstat_ret, found {count}")
-          prefix = prefix.replace(old, new, 1)
-          s = prefix + suffix
-          if s.count(new) != 1 or s.count(old) != 2:
-              raise SystemExit("fs/stat.c guard layout unexpected; expected 1 SUSFS stat guard and 2 manual-only return guards")
+          stat_call = "ksu_handle_stat(&dfd, &filename, &flag);"
+          if s.count(stat_call) != 1:
+              raise SystemExit(f"Expected exactly one ksu_handle_stat call, found {s.count(stat_call)}")
+          lines = s.splitlines(keepends=True)
+          call_line = next(i for i, line in enumerate(lines) if stat_call in line)
+          guard_line = next((i for i in range(call_line, max(-1, call_line - 10), -1)
+                             if lines[i].strip() == old), None)
+          if guard_line is None:
+              raise SystemExit("No local manual-hook guard found around ksu_handle_stat")
+          lines[guard_line] = lines[guard_line].replace(old, new, 1)
+          s = "".join(lines)
+
+          for call in ("ksu_handle_newfstat_ret(&fd, &statbuf);",
+                       "ksu_handle_fstat64_ret(&fd, &statbuf);"):
+              if s.count(call) != 1:
+                  raise SystemExit(f"Expected exactly one {call}")
+              ll = s.splitlines()
+              ix = next(i for i, line in enumerate(ll) if call in line)
+              nearby = "\n".join(ll[max(0, ix - 5):ix])
+              if old not in nearby or new in nearby:
+                  raise SystemExit(f"{call} must remain guarded by CONFIG_KSU_MANUAL_HOOK only")
           p.write_text(s)
-          print("fs/stat.c: ksu_handle_stat enabled for SUSFS; *_ret hooks remain manual-only")
+          print("fs/stat.c: SUSFS stat hook enabled; manual-only stat return hooks remain disabled")
           PY
           test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/exec.c)" -eq 5
           test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/open.c)" -eq 1
-          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/stat.c)" -eq 1
-          test "$(grep -c '#ifdef CONFIG_KSU_MANUAL_HOOK' fs/stat.c)" -eq 2
           grep -q 'ksu_handle_execveat' fs/exec.c
           grep -q 'ksu_handle_post_execveat' fs/exec.c
           grep -q 'ksu_handle_faccessat' fs/open.c
-          grep -q 'ksu_handle_stat' fs/stat.c
+          grep -q 'ksu_handle_stat(&dfd, &filename, &flag);' fs/stat.c
 
       - name: Validate legacy BakaSU hooks and record reboot discovery audit
         run: |
