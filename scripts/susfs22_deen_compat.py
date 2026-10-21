@@ -876,10 +876,7 @@ extern int susfs_open_redirect_spoof_show_map_vma_srcu(struct inode *inode, unsi
     mm = mm.replace(anchor, proto + anchor, 1)
 map_anchor = """\tif (file) {
 \t\tstruct inode *inode = file_inode(vma->vm_file);
-\t\tdev = inode->i_sb->s_dev;
-\t\tino = inode->i_ino;
-\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
-\t}"""
+"""
 map_replacement = """\tif (file) {
 \t\tstruct inode *inode = file_inode(vma->vm_file);
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
