@@ -39,6 +39,7 @@ struct rlimit64;
 struct rusage;
 struct sched_param;
 struct sched_attr;
+struct siginfo;
 struct sel_arg_struct;
 struct semaphore;
 struct sembuf;
