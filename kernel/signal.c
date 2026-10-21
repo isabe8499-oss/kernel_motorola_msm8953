@@ -3778,7 +3778,8 @@ SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
 
 	if (flags)
 		return -EINVAL;
-	if (sig < 0 || sig > _NSIG)
+	/* Signal zero is valid for permission/existence checks; _NSIG is not. */
+	if (sig < 0 || sig >= _NSIG)
 		return -EINVAL;
 
 	file = fget(pidfd);
