@@ -15,6 +15,9 @@
 #include <linux/init.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
+#include <linux/file.h>
+#include <linux/pid.h>
+#include <linux/pid_namespace.h>
 #include <linux/tty.h>
 #include <linux/binfmts.h>
 #include <linux/coredump.h>
@@ -1683,6 +1686,9 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 
 	BUG_ON(!tsk->ptrace &&
 	       (tsk->group_leader != tsk || !thread_group_empty(tsk)));
+
+	/* Wake pidfd pollers as soon as the process exits, not when reaped. */
+	wake_up_all(&task_pid(tsk)->wait_pidfd);
 
 	if (sig != SIGCHLD) {
 		/*
@@ -3738,3 +3744,78 @@ kdb_send_sig_info(struct task_struct *t, struct siginfo *info)
 		kdb_printf("Signal %d is sent to process %d.\n", sig, t->pid);
 }
 #endif	/* CONFIG_KGDB_KDB */
+
+
+/*
+ * pidfd_send_signal() - send a signal through a pidfd.
+ * The pidfd owns a reference to struct pid, so a reused numeric PID can
+ * never redirect the signal to a later process.
+ */
+static bool pidfd_access_pidns(struct pid *pid)
+{
+	struct pid_namespace *active = task_active_pid_ns(current);
+	struct pid_namespace *ns = ns_of_pid(pid);
+
+	while (ns) {
+		if (ns == active)
+			return true;
+		ns = ns->parent;
+	}
+	return false;
+}
+
+SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
+		siginfo_t __user *, uinfo, unsigned int, flags)
+{
+	struct fd f;
+	struct pid *pid;
+	struct siginfo info;
+	int ret;
+
+	if (flags)
+		return -EINVAL;
+
+	f = fdget(pidfd);
+	if (!f.file)
+		return -EBADF;
+	if (f.file->f_op != &pidfd_fops) {
+		ret = -EBADF;
+		goto out;
+	}
+
+	pid = f.file->private_data;
+	if (!pidfd_access_pidns(pid)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (uinfo) {
+		if (copy_from_user(&info, uinfo, sizeof(info))) {
+			ret = -EFAULT;
+			goto out;
+		}
+		if (sig != info.si_signo) {
+			ret = -EINVAL;
+			goto out;
+		}
+		/* Arbitrary siginfo is only permitted when signaling oneself. */
+		if (pid != task_tgid(current) &&
+		    (info.si_code >= 0 || info.si_code == SI_TKILL)) {
+			ret = -EPERM;
+			goto out;
+		}
+	} else {
+		memset(&info, 0, sizeof(info));
+		info.si_signo = sig;
+		info.si_errno = 0;
+		info.si_code = SI_USER;
+		info.si_pid = task_tgid_vnr(current);
+		info.si_uid = from_kuid_munged(current_user_ns(), current_uid());
+	}
+
+	ret = kill_pid_info(sig, &info, pid);
+out:
+	fdput(f);
+	return ret;
+}
+
