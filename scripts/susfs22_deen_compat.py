@@ -28,10 +28,10 @@ deferred_dir.mkdir(parents=True, exist_ok=True)
 # These rejected hunks are exclusively behind features disabled by this
 # allowlisted candidate profile; review the source hunks before changing this.
 deferred = {
-    "fs/namei.c.rej": "SUS_PATH adapted to Linux 3.18; OPEN_REDIRECT remains deferred",
+    "fs/namei.c.rej": "SUS_PATH and OPEN_REDIRECT entry integration adapted to Linux 3.18",
     "fs/namespace.c.rej": "SUS_MOUNT code adapted for Linux 3.18; enabled only in staged candidate build",
     "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures and inode spoof adapted for Linux 3.18",
-    "fs/proc/base.c.rej": "OPEN_REDIRECT integration deferred",
+    "fs/proc/base.c.rej": "OPEN_REDIRECT proc readlink integration adapted to Linux 3.18",
     "fs/proc/fd.c.rej": "SUS_MOUNT proc-fd output adapted for Linux 3.18",
     "fs/proc/task_mmu.c.rej": "SUS_MAP show_smap hunk adapted to Linux 3.18; enabled only in staged candidate build",
     "fs/readdir.c.rej": "SUS_PATH directory enumeration hook deferred",
@@ -987,11 +987,11 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 experimental compatibility profile — SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP are enabled after compatibility adaptations; OPEN_REDIRECT remains deferred because its Linux 3.18 VFS/proc integration is not implemented. Build success is not runtime/boot validation.\n"
+    "SUSFS v2.2 Linux 3.18 experimental compatibility profile — SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP are enabled after compatibility adaptations; OPEN_REDIRECT is enabled experimentally with Linux 3.18 openat, proc-readlink, fdinfo, maps and statfs adapters. Build success is not runtime/boot validation.\n"
     "KSU_SUSFS_SUS_PATH=y\n"
     "KSU_SUSFS_SUS_MOUNT=y\n"
     "KSU_SUSFS_SUS_KSTAT=y\n"
-    "KSU_SUSFS_OPEN_REDIRECT=n\n"
+    "KSU_SUSFS_OPEN_REDIRECT=y\n"
     "KSU_SUSFS_SUS_MAP=y\n"
     "KSU_SUSFS_SPOOF_UNAME=y\n"
     "KSU_SUSFS_ENABLE_LOG=y\n"
