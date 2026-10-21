@@ -287,15 +287,16 @@ jobs:
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
+          nm out/vmlinux > out/vmlinux-symbols-all.txt
           # Build a device-runnable Android ARM64 test binary, not a host/glibc executable.
           "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang" \
             -Wall -Wextra -Werror -O2 tools/testing/selftests/pidfd/pidfd_open_test.c \
             -o out/pidfd_open_test
           readelf -h out/pidfd_open_test | grep -q 'AArch64'
           # The linked kernel must contain both pidfd syscall entry points and BakaSU driver discovery.
-          nm out/vmlinux | grep -q sys_pidfd_open
-          nm out/vmlinux | grep -q sys_pidfd_send_signal
-          nm out/vmlinux | grep -q ksu_handle_sys_reboot
+          grep -q sys_pidfd_open out/vmlinux-symbols-all.txt
+          grep -q sys_pidfd_send_signal out/vmlinux-symbols-all.txt
+          grep -q ksu_handle_sys_reboot out/vmlinux-symbols-all.txt
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image.gz-dtb artifacts/
           cp out/.config artifacts/kernel.config
