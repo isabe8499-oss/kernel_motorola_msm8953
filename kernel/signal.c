@@ -28,6 +28,8 @@
 #include <linux/capability.h>
 #include <linux/freezer.h>
 #include <linux/pid_namespace.h>
+#include <linux/pid.h>
+#include <linux/file.h>
 #include <linux/nsproxy.h>
 #include <linux/user_namespace.h>
 #include <linux/uprobes.h>
@@ -1683,6 +1685,10 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 
 	BUG_ON(!tsk->ptrace &&
 	       (tsk->group_leader != tsk || !thread_group_empty(tsk)));
+
+	/* Notify pidfd pollers when the whole process reaches exit. */
+	if (tsk == tsk->group_leader && thread_group_empty(tsk))
+		wake_up_all(&task_pid(tsk)->wait_pidfd);
 
 	if (sig != SIGCHLD) {
 		/*
@@ -3738,3 +3744,89 @@ kdb_send_sig_info(struct task_struct *t, struct siginfo *info)
 		kdb_printf("Signal %d is sent to process %d.\n", sig, t->pid);
 }
 #endif	/* CONFIG_KGDB_KDB */
+
+/*
+ * pidfd_send_signal() backport based on Linux v5.4. This 3.18 tree uses
+ * struct siginfo rather than kernel_siginfo, so user siginfo is copied into
+ * the native 3.18 representation before calling kill_pid_info().
+ */
+static bool pidfd_access_pidns(struct pid *pid)
+{
+	struct pid_namespace *active = task_active_pid_ns(current);
+	struct pid_namespace *ns = ns_of_pid(pid);
+
+	while (ns) {
+		if (ns == active)
+			return true;
+		ns = ns->parent;
+	}
+	return false;
+}
+
+static struct pid *pidfd_to_pid(const struct file *file)
+{
+	return pidfd_pid(file);
+}
+
+SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
+		struct siginfo __user *, uinfo, unsigned int, flags)
+{
+	struct file *file;
+	struct pid *pid;
+	struct siginfo info;
+	int ret;
+
+	if (flags)
+		return -EINVAL;
+	if (sig < 0 || sig >= _NSIG)
+		return -EINVAL;
+
+	file = fget(pidfd);
+	if (!file)
+		return -EBADF;
+
+	pid = pidfd_to_pid(file);
+	if (IS_ERR(pid)) {
+		ret = PTR_ERR(pid);
+		goto out;
+	}
+
+	if (!pidfd_access_pidns(pid)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (uinfo) {
+#ifdef CONFIG_COMPAT
+		if (is_compat_task())
+			ret = copy_siginfo_from_user32(&info,
+				(struct compat_siginfo __user *)uinfo);
+		else
+#endif
+			ret = copy_from_user(&info, uinfo, sizeof(info)) ?
+				-EFAULT : 0;
+		if (ret)
+			goto out;
+		if (sig != info.si_signo) {
+			ret = -EINVAL;
+			goto out;
+		}
+		/* Arbitrary siginfo is only allowed when signaling oneself. */
+		if (task_tgid(current) != pid &&
+		    (info.si_code >= 0 || info.si_code == SI_TKILL)) {
+			ret = -EPERM;
+			goto out;
+		}
+	} else {
+		memset(&info, 0, sizeof(info));
+		info.si_signo = sig;
+		info.si_code = SI_USER;
+		info.si_pid = task_tgid_vnr(current);
+		info.si_uid = from_kuid_munged(current_user_ns(), current_uid());
+	}
+
+	ret = kill_pid_info(sig, &info, pid);
+out:
+	fput(file);
+	return ret;
+}

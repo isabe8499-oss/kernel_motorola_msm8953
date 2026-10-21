@@ -29,11 +29,11 @@ deferred_dir.mkdir(parents=True, exist_ok=True)
 # allowlisted candidate profile; review the source hunks before changing this.
 deferred = {
     "fs/namei.c.rej": "SUS_PATH adapted to Linux 3.18; OPEN_REDIRECT remains deferred",
-    "fs/namespace.c.rej": "SUS_MOUNT code adapted but disabled for safe reboot-loop triage",
+    "fs/namespace.c.rej": "SUS_MOUNT code adapted for Linux 3.18; enabled only in staged candidate build",
     "fs/notify/fdinfo.c.rej": "SUS_MOUNT fdinfo callback signatures and inode spoof adapted for Linux 3.18",
     "fs/proc/base.c.rej": "OPEN_REDIRECT integration deferred",
     "fs/proc/fd.c.rej": "SUS_MOUNT proc-fd output adapted for Linux 3.18",
-    "fs/proc/task_mmu.c.rej": "SUS_MAP show_smap hunk adapted to Linux 3.18",
+    "fs/proc/task_mmu.c.rej": "SUS_MAP show_smap hunk adapted to Linux 3.18; enabled only in staged candidate build",
     "fs/readdir.c.rej": "SUS_PATH directory enumeration hook deferred",
 }
 found = {
@@ -187,6 +187,27 @@ for fn in ("ksu_handle_faccessat", "ksu_handle_stat"):
     block = block.replace(old_check, new_check, 1)
     source_text = source_text[:start] + block + source_text[end:]
 bakasu_source.write_text(source_text)
+
+# The generic SUSFS inline script injects legacy KernelSU hooks into
+# security/security.c. BakaSU explicitly marks ksu_handle_rename as incompatible
+# with its manual-hook integration; rename mediation must use the supported LSM
+# path. Remove every exact legacy declaration/call block, then reject leftovers.
+security_text = security_path.read_text()
+security_text, rename_call_count = re.subn(
+    r"(?m)^[ \t]*#ifdef CONFIG_KSU[ \t]*\n[ \t]*ksu_handle_rename\(old_dentry, new_dentry\);[ \t]*\n[ \t]*#endif[ \t]*\n",
+    "",
+    security_text,
+)
+security_text, rename_decl_count = re.subn(
+    r"(?m)^[ \t]*extern int ksu_handle_rename\(struct dentry \*old_dentry, struct dentry \*new_dentry\);[ \t]*\n",
+    "",
+    security_text,
+)
+# The inline patch can insert the call at more than one matching legacy site;
+# all such references are incompatible with BakaSU Manual Hook.
+if "ksu_handle_rename" in security_text:
+    raise SystemExit("Unrecognized ksu_handle_rename reference remains in security/security.c")
+security_path.write_text(security_text)
 
 # The generic script also injects an old KernelSU credential hook with
 # struct cred * arguments. BakaSU's ksu_handle_setuid() instead accepts uid_t
@@ -661,17 +682,17 @@ for rel, reason in deferred.items():
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     if rel == "fs/namei.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/readdir.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_PATH fillonedir code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/namespace.c.rej":
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT namespace declarations adapted for Linux 3.18")
     elif rel == "fs/notify/fdinfo.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT fdinfo code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT fdinfo code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/proc/fd.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/proc/task_mmu.c.rej":
-        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP code adapted but disabled for safe reboot-loop triage")
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP code adapted for Linux 3.18; enabled only in staged candidate build")
     else:
         manifest.append(f"{rel}\tDEFERRED\t{reason}")
     src.unlink()
@@ -683,6 +704,33 @@ if avc_rej:
     shutil.copy2(avc_rej, dst)
     avc_rej.unlink()
     manifest.append("security/selinux/avc.c.rej\tMANUALLY_ADAPTED\tAdded required bypass_orig_flow label at the 3.18 AVC flow")
+
+# In this candidate SUSFS is a feature layer, not the selected inline-hook method.
+# When Manual Hook and SUSFS are both enabled, prefer the Manual Hook branch in
+# ksud_integration.c; otherwise AUTO_INITRC references ksu_init_rc_hook while the
+# SUSFS branch defines ksu_is_init_rc_hook_enabled, causing an undefined symbol.
+runtime_path = root / "drivers/kernelsu/runtime/ksud_integration.c"
+runtime_text = runtime_path.read_text()
+runtime_lines = runtime_text.splitlines()
+legacy_branch = "#elif defined(CONFIG_KSU_SUSFS)"
+manual_safe_branch = "#elif defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)"
+legacy_indexes = [i for i, line in enumerate(runtime_lines) if line.strip() == legacy_branch]
+safe_indexes = [i for i, line in enumerate(runtime_lines) if line.strip() == manual_safe_branch]
+if len(legacy_indexes) == 1 and not safe_indexes:
+    runtime_lines[legacy_indexes[0]] = runtime_lines[legacy_indexes[0]] + " && !defined(CONFIG_KSU_MANUAL_HOOK)"
+elif not legacy_indexes and len(safe_indexes) == 1:
+    pass  # Idempotent: the intended branch guard is already present.
+else:
+    print(f"runtime path: {runtime_path}; resolved: {runtime_path.resolve()}")
+    print(f"SUSFS branch counts: legacy={len(legacy_indexes)}, guarded={len(safe_indexes)}")
+    print("Conditional/initrc lines in runtime source:")
+    for line_no, line in enumerate(runtime_lines, 1):
+        if "#elif" in line or "init_rc" in line or "ksu_is_" in line:
+            print(f"{line_no}: {line}")
+    (artifacts / "runtime-initrc-hook-source.c").write_text(runtime_text)
+    raise SystemExit("Could not uniquely identify SUSFS runtime branch for Manual Hook precedence; diagnostic source uploaded")
+runtime_text = "\n".join(runtime_lines) + ("\n" if runtime_text.endswith("\n") else "")
+runtime_path.write_text(runtime_text)
 
 # Normalize only whitespace artifacts introduced by the pinned patch/script.
 ns = root / "fs/namespace.c"
@@ -697,7 +745,7 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 partial compatibility profile — SUS_PATH/SUS_MOUNT/SUS_KSTAT/SUS_MAP enabled and compile-tested only; runtime/boot unverified\n"
+    "SUSFS v2.2 Linux 3.18 experimental compatibility profile — SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP are enabled after compatibility adaptations; OPEN_REDIRECT remains deferred because its Linux 3.18 VFS/proc integration is not implemented. Build success is not runtime/boot validation.\n"
     "KSU_SUSFS_SUS_PATH=y\n"
     "KSU_SUSFS_SUS_MOUNT=y\n"
     "KSU_SUSFS_SUS_KSTAT=y\n"

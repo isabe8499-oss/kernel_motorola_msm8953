@@ -1,9 +1,10 @@
-name: Deen BakaSU + SUSFS v2.2 GCC 4.9 manual-hook stage 1
+name: Deen BakaSU + SUSFS v2.2 + pidfd backport GCC 4.9
 
 on:
   push:
     branches:
       - deen-bakasu-susfs22-root-preserve
+      - backport/pidfd-bakasu-susfs22
   workflow_dispatch:
 
 permissions:
@@ -388,6 +389,72 @@ jobs:
                       i = j
               i += 1
           p.write_text("\n".join(lines) + "\n")
+
+          # The SUSFS inline vfs_fstat hook uses ksu_is_init_rc_hook_enabled,
+          # which is intentionally absent when the Manual Hook branch owns initrc.
+          # KSU_SUSFS_SUS_KSTAT is disabled in this candidate profile, so suppress
+          # only those SUSFS blocks that directly reference this initrc-only symbol.
+          p = Path("fs/stat.c")
+          lines = p.read_text().splitlines()
+          candidates = []
+          for i, line in enumerate(lines):
+              if line.strip() != "#ifdef CONFIG_KSU_SUSFS":
+                  continue
+              depth = 0
+              for j in range(i, len(lines)):
+                  token = lines[j].strip()
+                  if token.startswith("#if"):
+                      depth += 1
+                  elif token.startswith("#endif"):
+                      depth -= 1
+                      if depth == 0:
+                          if any("ksu_is_init_rc_hook_enabled" in x for x in lines[i:j + 1]):
+                              candidates.append((i, j))
+                          break
+          # Prefer the smallest matching blocks so unrelated SUSFS functionality stays intact.
+          selected = []
+          for span in candidates:
+              i, j = span
+              if not any(k >= i and l <= j and (k, l) != span for k, l in candidates):
+                  selected.append(span)
+          for i, j in selected:
+              lines[i] = "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)"
+              changed.append(f"fs/stat.c:initrc-inline-hook-lines-{i + 1}-{j + 1}")
+          p.write_text("\n".join(lines) + "\n")
+
+          # Manual Hook owns its own input-event state. Do not compile the
+          # SUSFS-inline wrapper which references ksu_is_input_hook_enabled.
+          p = Path("drivers/input/input.c")
+          lines = p.read_text().splitlines()
+          starts = {
+              "#ifdef CONFIG_KSU": "#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_MANUAL_HOOK)",
+              "#ifdef CONFIG_KSU_SUSFS": "#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)",
+          }
+          candidates = []
+          for i, line in enumerate(lines):
+              guard = line.strip()
+              if guard not in starts:
+                  continue
+              depth = 0
+              for j in range(i, len(lines)):
+                  token = lines[j].strip()
+                  if token.startswith("#if"):
+                      depth += 1
+                  elif token.startswith("#endif"):
+                      depth -= 1
+                      if depth == 0:
+                          if any("ksu_is_input_hook_enabled" in x for x in lines[i:j + 1]):
+                              candidates.append((i, j, starts[guard]))
+                          break
+          selected = []
+          for span in candidates:
+              i, j, replacement = span
+              if not any(k >= i and l <= j and (k, l) != (i, j) for k, l, _ in candidates):
+                  selected.append(span)
+          for i, j, replacement in selected:
+              lines[i] = replacement
+              changed.append(f"drivers/input/input.c:input-inline-hook-lines-{i + 1}-{j + 1}")
+          p.write_text("\n".join(lines) + "\n")
           Path("artifacts/manual-inline-hook-suppression.txt").write_text(
               "\n".join(changed) + ("\n" if changed else "No duplicate direct manual/initrc hook blocks detected; manual hook path preserved.\n")
           )
@@ -426,11 +493,11 @@ jobs:
             --enable KSU_SUSFS \
             --disable KSU_SUSFS_INLINE_HOOK \
             --disable KSU_TRACEPOINT_HOOK \
-            --disable KSU_SUSFS_SUS_PATH \
-            --disable KSU_SUSFS_SUS_MOUNT \
-            --disable KSU_SUSFS_SUS_KSTAT \
+            --enable KSU_SUSFS_SUS_PATH \
+            --enable KSU_SUSFS_SUS_MOUNT \
+            --enable KSU_SUSFS_SUS_KSTAT \
             --disable KSU_SUSFS_OPEN_REDIRECT \
-            --disable KSU_SUSFS_SUS_MAP \
+            --enable KSU_SUSFS_SUS_MAP \
             --enable KSU_SUSFS_SPOOF_UNAME \
             --enable KSU_SUSFS_ENABLE_LOG \
             --enable KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
@@ -440,20 +507,25 @@ jobs:
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y$' out/.config
-          grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q '^# CONFIG_KSU_SUSFS_INLINE_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_PATH is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_MOUNT is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_KSTAT is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y$' out/.config
           grep -q '^# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set$' out/.config
-          grep -q '^# CONFIG_KSU_SUSFS_SUS_MAP is not set$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y$' out/.config
-          grep -E '^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
+          # Human-readable metadata must match actual Kconfig, or fail the build.
+          grep -q '^KSU_SUSFS_SUS_PATH=y$' artifacts/deferred-feature-contract.txt
+          grep -q '^KSU_SUSFS_SUS_MOUNT=y$' artifacts/deferred-feature-contract.txt
+          grep -q '^KSU_SUSFS_SUS_KSTAT=y$' artifacts/deferred-feature-contract.txt
+          grep -q '^KSU_SUSFS_OPEN_REDIRECT=n$' artifacts/deferred-feature-contract.txt
+          grep -q '^KSU_SUSFS_SUS_MAP=y$' artifacts/deferred-feature-contract.txt
+          grep -E '^(CONFIG_KSU=|CONFIG_KSU_MANUAL_HOOK=|CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=|CONFIG_KSU_SUSFS=|CONFIG_KSU_SUSFS_SPOOF_UNAME=|CONFIG_KSU_SUSFS_ENABLE_LOG=|CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=|CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=)' out/.config | tee artifacts/candidate-config.txt
 
       - name: Build BakaSU manual-hook + SUSFS kernel
         run: |
@@ -464,10 +536,16 @@ jobs:
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
-          nm out/vmlinux | grep -q ksu_handle_sys_reboot
-          nm out/vmlinux | grep -q ksu_install_fd
-          nm out/vmlinux | grep -q susfs_enable_log
-          nm out/vmlinux | grep -q susfs_spoof_uname
+          mkdir -p artifacts
+          # Materialize the symbol table once; avoid nm receiving SIGPIPE from grep -q under pipefail.
+          nm out/vmlinux > artifacts/vmlinux-symbols-all.txt
+          grep -q ksu_handle_sys_reboot artifacts/vmlinux-symbols-all.txt
+          grep -q ksu_install_fd artifacts/vmlinux-symbols-all.txt
+          grep -q susfs_enable_log artifacts/vmlinux-symbols-all.txt
+          # Fail the build unless both pidfd syscall entry points are linked.
+          grep -q sys_pidfd_open artifacts/vmlinux-symbols-all.txt
+          grep -q sys_pidfd_send_signal artifacts/vmlinux-symbols-all.txt
+          grep -q susfs_spoof_uname artifacts/vmlinux-symbols-all.txt
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           mkdir -p artifacts/kernel
@@ -478,7 +556,7 @@ jobs:
           cp bakasu-source-commit.txt artifacts/
           {
             echo '## Deen BakaSU manual-hook + SUSFS v2.2 build'
-            echo 'Keeps the confirmed working KSU_MANUAL_HOOK mode and enables SUSFS separately. Inline Hook and Tracepoint modes are disabled. Enabled SUSFS features: spoof uname, logging, hide SUSFS symbols and spoof cmdline/bootconfig; higher-risk VFS/path options remain disabled.'
+            echo 'Keeps KSU_MANUAL_HOOK and enables adapted SUSFS v2.2 features: SUS_PATH, SUS_MOUNT, SUS_KSTAT, SUS_MAP, spoof uname, logging, hide SUSFS symbols and spoof cmdline/bootconfig. OPEN_REDIRECT remains disabled because its Linux 3.18 VFS/proc integration is not implemented. Inline Hook and Tracepoint modes remain disabled.'
             echo 'This is a test candidate: successful build and linked symbols do not prove runtime/boot compatibility.'
             cat artifacts/patch-status.txt
             cat artifacts/deferred-feature-contract.txt
@@ -520,21 +598,22 @@ jobs:
           Keeps CONFIG_KSU_MANUAL_HOOK and the known-working GCC 4.9 root integration.
           KSU_SUSFS is independent from the mutually exclusive hook method; inline-hook and Tracepoint modes remain disabled.
           Enabled SUSFS features: spoof uname, logging, hide SUSFS symbols, spoof cmdline/bootconfig.
-          Disabled SUSFS features: SUS_PATH, SUS_MOUNT, SUS_KSTAT, OPEN_REDIRECT, SUS_MAP.
+          Enabled SUSFS features: SUS_PATH, SUS_MOUNT, SUS_KSTAT, SUS_MAP, spoof uname, logging, hide SUSFS symbols, spoof cmdline/bootconfig.
+          Disabled SUSFS feature: OPEN_REDIRECT (not yet ported to Linux 3.18).
           Compile/ZIP checks do not prove boot/runtime compatibility. Preserve a known-good Boot backup and recovery access.
           NOTE
           cd anykernel
-          zip -qr9 ../artifacts/Deen-BakaSU-Root-SUSFS22-Stage1-GCC49-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
+          zip -qr9 ../artifacts/Deen-BakaSU-Root-SUSFS22-PIDFD-Stage1-GCC49-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
-          unzip -t artifacts/Deen-BakaSU-Root-SUSFS22-Stage1-GCC49-TWRP.zip
-          sha256sum artifacts/Deen-BakaSU-Root-SUSFS22-Stage1-GCC49-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
-          test -s artifacts/Deen-BakaSU-Root-SUSFS22-Stage1-GCC49-TWRP.zip
+          unzip -t artifacts/Deen-BakaSU-Root-SUSFS22-PIDFD-Stage1-GCC49-TWRP.zip
+          sha256sum artifacts/Deen-BakaSU-Root-SUSFS22-PIDFD-Stage1-GCC49-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
+          test -s artifacts/Deen-BakaSU-Root-SUSFS22-PIDFD-Stage1-GCC49-TWRP.zip
 
       - name: Upload root-preserving SUSFS build and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deen-linux-3.18.140-bakasu-root-susfs22-stage1-gcc49
+          name: deen-linux-3.18.140-bakasu-root-susfs22-pidfd-stage1-gcc49
           path: artifacts/
           if-no-files-found: warn
           retention-days: 7

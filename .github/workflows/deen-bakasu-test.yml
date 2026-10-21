@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - deen-bakasu-manual-hook-test
+      - backport/pidfd-bakasu-susfs22
+  pull_request:
+    branches:
+      - deen-bakasu-susfs22-root-preserve
   workflow_dispatch:
 
 permissions:
@@ -23,6 +27,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential flex gcc-aarch64-linux-gnu libssl-dev libelf-dev make python3 git curl cpio
+
+      - name: Set up JDK 17 for Android SDK tools
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android ARM64 test toolchain
+        run: |
+          set -euo pipefail
+          sdkmanager --install "ndk;27.2.12479018"
+          test -x "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang" --version | sed -n '1p'
 
       - name: Integrate BakaSU source
         run: |
@@ -265,11 +287,20 @@ jobs:
           make O=out -j"$(nproc)" Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/vmlinux
-          # Ensure the kernel contains the BakaSU reboot supercall used for driver discovery.
-          nm out/vmlinux | grep -q ksu_handle_sys_reboot
+          nm out/vmlinux > out/vmlinux-symbols-all.txt
+          # Build a device-runnable Android ARM64 test binary, not a host/glibc executable.
+          "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang" \
+            -Wall -Wextra -Werror -O2 tools/testing/selftests/pidfd/pidfd_open_test.c \
+            -o out/pidfd_open_test
+          readelf -h out/pidfd_open_test | grep -q 'AArch64'
+          # The linked kernel must contain both pidfd syscall entry points and BakaSU driver discovery.
+          grep -q sys_pidfd_open out/vmlinux-symbols-all.txt
+          grep -q sys_pidfd_send_signal out/vmlinux-symbols-all.txt
+          grep -q ksu_handle_sys_reboot out/vmlinux-symbols-all.txt
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image.gz-dtb artifacts/
           cp out/.config artifacts/kernel.config
+          cp out/pidfd_open_test artifacts/
           nm out/vmlinux | grep -E 'ksu_handle_sys_reboot|ksu_handle_execveat|ksu_handle_post_execveat|ksu_handle_faccessat|ksu_handle_stat|ksu_install_fd' > artifacts/bakasu-symbols.txt
           find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
           cp bakasu-source-commit.txt artifacts/
