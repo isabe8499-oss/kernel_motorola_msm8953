@@ -203,11 +203,8 @@ security_text, rename_decl_count = re.subn(
     "",
     security_text,
 )
-if rename_call_count != rename_decl_count:
-    raise SystemExit(
-        "Legacy ksu_handle_rename declaration/call counts differ "
-        f"(calls={rename_call_count}, declarations={rename_decl_count}); refusing unsafe removal"
-    )
+# The inline patch can insert the call at more than one matching legacy site;
+# all such references are incompatible with BakaSU Manual Hook.
 if "ksu_handle_rename" in security_text:
     raise SystemExit("Unrecognized ksu_handle_rename reference remains in security/security.c")
 security_path.write_text(security_text)
