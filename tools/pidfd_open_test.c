@@ -11,6 +11,9 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 
+#ifndef SYS_pidfd_send_signal
+#define SYS_pidfd_send_signal 424
+#endif
 #ifndef SYS_pidfd_open
 #define SYS_pidfd_open 434
 #endif
@@ -27,6 +30,12 @@ int main(void)
 		return saved_errno == ENOSYS ? 2 : 1;
 	}
 
+	if (syscall(SYS_pidfd_send_signal, fd, 0, NULL, 0U) < 0) {
+		perror("pidfd_send_signal(signal=0)");
+		close(fd);
+		return 1;
+	}
+
 	fdflags = fcntl(fd, F_GETFD);
 	if (fdflags < 0) {
 		perror("fcntl(F_GETFD)");
@@ -39,7 +48,13 @@ int main(void)
 		return 1;
 	}
 
-	printf("pidfd_open OK: fd=%d, FD_CLOEXEC set\n", fd);
+	printf("pidfd_open OK: fd=%d, FD_CLOEXEC set; pidfd_send_signal(signal=0) OK\n", fd);
 	close(fd);
+
+	/* A closed pidfd must not be accepted as a process handle. */
+	if (syscall(SYS_pidfd_send_signal, fd, 0, NULL, 0U) != -1 || errno != EBADF) {
+		fprintf(stderr, "pidfd_send_signal on closed fd should fail with EBADF\n");
+		return 1;
+	}
 	return 0;
 }
