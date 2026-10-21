@@ -3771,6 +3771,8 @@ SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
 	struct siginfo info;
 	int ret;
 
+	if (!valid_signal(sig))
+		return -EINVAL;
 	if (flags)
 		return -EINVAL;
 
