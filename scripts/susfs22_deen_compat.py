@@ -188,6 +188,29 @@ for fn in ("ksu_handle_faccessat", "ksu_handle_stat"):
     source_text = source_text[:start] + block + source_text[end:]
 bakasu_source.write_text(source_text)
 
+# The generic SUSFS inline script injects legacy KernelSU hooks into
+# security/security.c. BakaSU explicitly marks ksu_handle_rename as incompatible
+# with its manual-hook integration; rename mediation is handled by the supported
+# LSM path, so remove only this exact legacy declaration/call pair.
+security_text = security_path.read_text()
+security_text, rename_call_count = re.subn(
+    r"(?m)^\s*#ifdef CONFIG_KSU\n\s*ksu_handle_rename\(old_dentry, new_dentry\);\n\s*#endif\n",
+    "",
+    security_text,
+)
+security_text, rename_decl_count = re.subn(
+    r"(?m)^\s*extern int ksu_handle_rename\(struct dentry \*old_dentry, struct dentry \*new_dentry\);\n",
+    "",
+    security_text,
+)
+if rename_call_count > 1 or rename_decl_count > 1:
+    raise SystemExit("Unexpected duplicate legacy ksu_handle_rename hooks; refusing unsafe removal")
+if rename_call_count != rename_decl_count:
+    raise SystemExit("Legacy ksu_handle_rename declaration/call pair is incomplete; refusing unsafe removal")
+if "ksu_handle_rename" in security_text:
+    raise SystemExit("Unrecognized ksu_handle_rename reference remains in security/security.c")
+security_path.write_text(security_text)
+
 # The generic script also injects an old KernelSU credential hook with
 # struct cred * arguments. BakaSU's ksu_handle_setuid() instead accepts uid_t
 # values and is already wired by its own setuid hook; remove the mismatched call.
