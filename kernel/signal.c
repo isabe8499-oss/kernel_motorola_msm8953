@@ -3792,10 +3792,16 @@ SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
 	}
 
 	if (uinfo) {
-		if (copy_from_user(&info, uinfo, sizeof(info))) {
-			ret = -EFAULT;
+#ifdef CONFIG_COMPAT
+		if (is_compat_task())
+			ret = copy_siginfo_from_user32(&info,
+				(struct compat_siginfo __user *)uinfo);
+		else
+#endif
+			ret = copy_from_user(&info, uinfo, sizeof(info)) ?
+				-EFAULT : 0;
+		if (ret)
 			goto out;
-		}
 		if (sig != info.si_signo) {
 			ret = -EINVAL;
 			goto out;
