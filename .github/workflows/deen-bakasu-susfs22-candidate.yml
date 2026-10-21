@@ -56,10 +56,10 @@ jobs:
               start = k.find("config KSU_SUSFS\n")
               end = k.find("endchoice", start)
               if start < 0 or end < 0:
-                  raise SystemExit("Could not locate SUSFS hook-method entry in BakaSU Kconfig")
+                  raise SystemExit("Could not locate SUSFS-inline entry in BakaSU Kconfig")
               block = k[start:end]
               if 'bool "SUSFS Inline Hook"' not in block:
-                  raise SystemExit("Unexpected KSU_SUSFS Kconfig block; refusing automatic rewrite")
+                  raise SystemExit("Unexpected KSU_SUSFS Kconfig block; refusing rewrite")
               block = block.replace("config KSU_SUSFS", "config KSU_SUSFS_INLINE_HOOK", 1)
               block = block.replace('bool "SUSFS Inline Hook"', 'bool "SUSFS Inline Hook method"', 1)
               k = k[:start] + block + k[end:]
@@ -94,7 +94,7 @@ jobs:
             endif
           endif
 
-          # SUSFS features are separate from the mutually exclusive hook method.
+          # SUSFS is independent from the mutually-exclusive hook-method choice.
           ifdef CONFIG_KSU_SUSFS
             include $(KSU_SRC)/tools/susfs_compat.mk
             ifeq ($(shell test -e $(srctree)/fs/susfs.c; echo $$?),0)
@@ -109,11 +109,11 @@ jobs:
           """
           b = b[:start] + chain + b[end + len("endif\n\n"):]
           if "else ifdef CONFIG_KSU_SUSFS_INLINE_HOOK" not in b:
-              raise SystemExit("Failed to separate KSU_SUSFS_INLINE_HOOK from KSU_SUSFS features")
+              raise SystemExit("Failed to rename SUSFS inline hook method in Kbuild")
           if b.count("include $(KSU_SRC)/tools/susfs_compat.mk") != 1:
               raise SystemExit("Expected exactly one SUSFS compatibility include")
           bp.write_text(b)
-          print("SUSFS feature flag separated; BakaSU manual hook mode remains available.")
+          print("SUSFS feature separated from hook method; manual root hooks remain selected.")
           PY
           grep -q 'config KSU_SUSFS_INLINE_HOOK' KernelSU/kernel/Kconfig
           grep -q 'config KSU_SUSFS$' KernelSU/kernel/Kconfig
