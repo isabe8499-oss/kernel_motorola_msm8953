@@ -898,10 +898,7 @@ map_replacement = """\tif (file) {
 \t\t\tsrcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);
 \t\t}
 #endif
-\t\tdev = inode->i_sb->s_dev;
-\t\tino = inode->i_ino;
-\t\tpgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
-\t}"""
+"""
 if "susfs_open_redirect_spoof_show_map_vma_srcu(inode" not in mm:
     if mm.count(map_anchor) != 1:
         raise SystemExit("task_mmu.c maps reverse-spoof anchor mismatch")
