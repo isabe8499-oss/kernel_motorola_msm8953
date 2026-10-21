@@ -440,7 +440,7 @@ jobs:
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y$' out/.config
-          grep -q '^# CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK is not set
+          grep -q '^# CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK is not set$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q '^# CONFIG_KSU_SUSFS_INLINE_HOOK is not set$' out/.config
           grep -q '^# CONFIG_KSU_TRACEPOINT_HOOK is not set$' out/.config
