@@ -3778,7 +3778,7 @@ SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
 
 	if (flags)
 		return -EINVAL;
-	if (sig < 0 || sig > _NSIG)
+	if (sig < 0 || sig >= _NSIG)
 		return -EINVAL;
 
 	file = fget(pidfd);
