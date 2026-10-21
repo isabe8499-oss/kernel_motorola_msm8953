@@ -711,11 +711,22 @@ if avc_rej:
 # SUSFS branch defines ksu_is_init_rc_hook_enabled, causing an undefined symbol.
 runtime_path = root / "drivers/kernelsu/runtime/ksud_integration.c"
 runtime_text = runtime_path.read_text()
-old_runtime_branch = "#elif defined(CONFIG_KSU_SUSFS)\n    DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"
-new_runtime_branch = "#elif defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)\n    DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"
-if runtime_text.count(old_runtime_branch) != 1:
-    raise SystemExit("Could not uniquely locate SUSFS runtime branch for Manual Hook precedence fix")
-runtime_path.write_text(runtime_text.replace(old_runtime_branch, new_runtime_branch, 1))
+runtime_marker = "DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"
+marker_pos = runtime_text.find(runtime_marker)
+if marker_pos < 0 or runtime_text.find(runtime_marker, marker_pos + 1) >= 0:
+    raise SystemExit("Could not uniquely locate SUSFS initrc static-key definition")
+branch_pos = runtime_text.rfind("#elif", 0, marker_pos)
+if branch_pos < 0:
+    raise SystemExit("SUSFS initrc static key has no preceding conditional branch")
+line_start = runtime_text.rfind("\n", 0, branch_pos) + 1
+line_end = runtime_text.find("\n", branch_pos)
+if line_end < 0:
+    line_end = len(runtime_text)
+branch_line = runtime_text[line_start:line_end]
+if "CONFIG_KSU_SUSFS" not in branch_line or "CONFIG_KSU_MANUAL_HOOK" in branch_line:
+    raise SystemExit("Unexpected SUSFS initrc conditional; refusing Manual Hook precedence edit")
+runtime_text = runtime_text[:line_start] + branch_line + " && !defined(CONFIG_KSU_MANUAL_HOOK)" + runtime_text[line_end:]
+runtime_path.write_text(runtime_text)
 
 # Normalize only whitespace artifacts introduced by the pinned patch/script.
 ns = root / "fs/namespace.c"
