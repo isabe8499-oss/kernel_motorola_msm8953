@@ -10,7 +10,7 @@ It deliberately uses the upstream syscall numbers:
 
 - `kernel/pid.c`: `pidfd_open()` / pid reference ownership follows Linux v5.4.
 - `kernel/pid.c`: pidfd file operations and poll behavior are adapted from Linux v5.10's `kernel/fork.c`.
-- `kernel/signal.c`: `pidfd_send_signal()` follows the Linux v5.4 flow, adapted from `kernel_siginfo` to this tree's `struct siginfo`.
+- `kernel/signal.c`: `pidfd_send_signal()` follows the Linux v5.4 flow, adapted from `kernel_siginfo` to this tree's `struct siginfo`; AArch32 compat callers use `copy_siginfo_from_user32()`.
 - `include/linux/pid.h`, `include/linux/init_task.h`, and signal exit notification: per-`struct pid` wait queue and exit wakeup are required for pollable descriptors.
 - syscall tables and prototypes register the two entry points for AArch64 and AArch32 compat.
 
