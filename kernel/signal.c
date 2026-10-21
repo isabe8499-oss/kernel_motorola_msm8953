@@ -1688,7 +1688,7 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 
 	/* Notify pidfd pollers when the whole process reaches exit. */
 	if (tsk == tsk->group_leader && thread_group_empty(tsk))
-		wake_up_all(&task_tgid(tsk)->wait_pidfd);
+		wake_up_all(&task_pid(tsk)->wait_pidfd);
 
 	if (sig != SIGCHLD) {
 		/*
