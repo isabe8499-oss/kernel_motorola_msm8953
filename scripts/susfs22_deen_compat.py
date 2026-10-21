@@ -190,23 +190,24 @@ bakasu_source.write_text(source_text)
 
 # The generic SUSFS inline script injects legacy KernelSU hooks into
 # security/security.c. BakaSU explicitly marks ksu_handle_rename as incompatible
-# with its manual-hook integration; rename mediation is handled by the supported
-# LSM path, so remove only this exact legacy declaration/call pair.
+# with its manual-hook integration; rename mediation must use the supported LSM
+# path. Remove every exact legacy declaration/call block, then reject leftovers.
 security_text = security_path.read_text()
 security_text, rename_call_count = re.subn(
-    r"(?m)^\s*#ifdef CONFIG_KSU\n\s*ksu_handle_rename\(old_dentry, new_dentry\);\n\s*#endif\n",
+    r"(?m)^[ \t]*#ifdef CONFIG_KSU[ \t]*\n[ \t]*ksu_handle_rename\(old_dentry, new_dentry\);[ \t]*\n[ \t]*#endif[ \t]*\n",
     "",
     security_text,
 )
 security_text, rename_decl_count = re.subn(
-    r"(?m)^\s*extern int ksu_handle_rename\(struct dentry \*old_dentry, struct dentry \*new_dentry\);\n",
+    r"(?m)^[ \t]*extern int ksu_handle_rename\(struct dentry \*old_dentry, struct dentry \*new_dentry\);[ \t]*\n",
     "",
     security_text,
 )
-if rename_call_count > 1 or rename_decl_count > 1:
-    raise SystemExit("Unexpected duplicate legacy ksu_handle_rename hooks; refusing unsafe removal")
 if rename_call_count != rename_decl_count:
-    raise SystemExit("Legacy ksu_handle_rename declaration/call pair is incomplete; refusing unsafe removal")
+    raise SystemExit(
+        "Legacy ksu_handle_rename declaration/call counts differ "
+        f"(calls={rename_call_count}, declarations={rename_decl_count}); refusing unsafe removal"
+    )
 if "ksu_handle_rename" in security_text:
     raise SystemExit("Unrecognized ksu_handle_rename reference remains in security/security.c")
 security_path.write_text(security_text)
