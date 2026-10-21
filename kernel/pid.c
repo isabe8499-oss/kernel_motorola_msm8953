@@ -38,6 +38,11 @@
 #include <linux/syscalls.h>
 #include <linux/proc_ns.h>
 #include <linux/proc_fs.h>
+#include <linux/anon_inodes.h>
+#include <linux/file.h>
+#include <linux/fs.h>
+#include <linux/poll.h>
+#include <linux/pid.h>
 
 #define pid_hashfn(nr, ns)	\
 	hash_long((unsigned long)nr + (unsigned long)ns, pidhash_shift)
@@ -326,6 +331,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	atomic_set(&pid->count, 1);
 	for (type = 0; type < PIDTYPE_MAX; ++type)
 		INIT_HLIST_HEAD(&pid->tasks[type]);
+	init_waitqueue_head(&pid->wait_pidfd);
 
 	upid = pid->numbers + ns->level;
 	spin_lock_irq(&pidmap_lock);
@@ -580,6 +586,74 @@ void __init pidhash_init(void)
 
 	for (i = 0; i < pidhash_size; i++)
 		INIT_HLIST_HEAD(&pid_hash[i]);
+}
+
+
+/*
+ * pidfd backport for Linux 3.18.
+ * The pid object, rather than a numeric PID, is held by the descriptor so
+ * PID reuse cannot redirect operations to a different process.
+ */
+static unsigned int pidfd_poll(struct file *file, poll_table *wait)
+{
+	struct pid *pid = file->private_data;
+	struct task_struct *task;
+	unsigned int mask = 0;
+
+	poll_wait(file, &pid->wait_pidfd, wait);
+	rcu_read_lock();
+	task = pid_task(pid, PIDTYPE_PID);
+	if (!task || task->exit_state)
+		mask = POLLIN | POLLRDNORM;
+	rcu_read_unlock();
+
+	return mask;
+}
+
+static int pidfd_release(struct inode *inode, struct file *file)
+{
+	put_pid(file->private_data);
+	return 0;
+}
+
+const struct file_operations pidfd_fops = {
+	.release = pidfd_release,
+	.poll = pidfd_poll,
+};
+
+static int pidfd_create(struct pid *pid)
+{
+	int fd;
+
+	fd = anon_inode_getfd("[pidfd]", &pidfd_fops, get_pid(pid),
+			      O_RDWR | O_CLOEXEC);
+	if (fd < 0)
+		put_pid(pid);
+	return fd;
+}
+
+SYSCALL_DEFINE2(pidfd_open, pid_t, nr, unsigned int, flags)
+{
+	struct pid *pid;
+	int ret;
+
+	if (flags)
+		return -EINVAL;
+	if (nr <= 0)
+		return -EINVAL;
+
+	pid = find_get_pid(nr);
+	if (!pid)
+		return -ESRCH;
+
+	/* This first pidfd implementation supports thread-group leaders only. */
+	rcu_read_lock();
+	ret = pid_task(pid, PIDTYPE_TGID) ? 0 : -EINVAL;
+	rcu_read_unlock();
+	if (!ret)
+		ret = pidfd_create(pid);
+	put_pid(pid);
+	return ret;
 }
 
 void __init pidmap_init(void)
