@@ -711,30 +711,25 @@ if avc_rej:
 # SUSFS branch defines ksu_is_init_rc_hook_enabled, causing an undefined symbol.
 runtime_path = root / "drivers/kernelsu/runtime/ksud_integration.c"
 runtime_text = runtime_path.read_text()
-runtime_marker = "DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"
-marker_pos = runtime_text.find(runtime_marker)
-marker_count = runtime_text.count(runtime_marker)
-if marker_count != 1:
+runtime_lines = runtime_text.splitlines()
+legacy_branch = "#elif defined(CONFIG_KSU_SUSFS)"
+manual_safe_branch = "#elif defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)"
+legacy_indexes = [i for i, line in enumerate(runtime_lines) if line.strip() == legacy_branch]
+safe_indexes = [i for i, line in enumerate(runtime_lines) if line.strip() == manual_safe_branch]
+if len(legacy_indexes) == 1 and not safe_indexes:
+    runtime_lines[legacy_indexes[0]] = runtime_lines[legacy_indexes[0]] + " && !defined(CONFIG_KSU_MANUAL_HOOK)"
+elif not legacy_indexes and len(safe_indexes) == 1:
+    pass  # Idempotent: the intended branch guard is already present.
+else:
     print(f"runtime path: {runtime_path}; resolved: {runtime_path.resolve()}")
-    print(f"initrc SUSFS marker count: {marker_count}; source bytes: {len(runtime_text)}")
-    print("Relevant runtime-source lines:")
-    for line_no, line in enumerate(runtime_text.splitlines(), 1):
-        if any(token in line for token in ("init_rc", "ksu_is_", "CONFIG_KSU_SUSFS", "CONFIG_KSU_MANUAL_HOOK")):
+    print(f"SUSFS branch counts: legacy={len(legacy_indexes)}, guarded={len(safe_indexes)}")
+    print("Conditional/initrc lines in runtime source:")
+    for line_no, line in enumerate(runtime_lines, 1):
+        if "#elif" in line or "init_rc" in line or "ksu_is_" in line:
             print(f"{line_no}: {line}")
     (artifacts / "runtime-initrc-hook-source.c").write_text(runtime_text)
-    raise SystemExit("Could not uniquely locate SUSFS initrc static-key definition; diagnostic source uploaded")
-branch_pos = runtime_text.rfind("#elif", 0, marker_pos)
-if branch_pos < 0:
-    (artifacts / "runtime-initrc-hook-source.c").write_text(runtime_text)
-    raise SystemExit("SUSFS initrc static key has no preceding conditional branch; diagnostic source uploaded")
-line_start = runtime_text.rfind("\n", 0, branch_pos) + 1
-line_end = runtime_text.find("\n", branch_pos)
-if line_end < 0:
-    line_end = len(runtime_text)
-branch_line = runtime_text[line_start:line_end]
-if "CONFIG_KSU_SUSFS" not in branch_line or "CONFIG_KSU_MANUAL_HOOK" in branch_line:
-    raise SystemExit("Unexpected SUSFS initrc conditional; refusing Manual Hook precedence edit")
-runtime_text = runtime_text[:line_start] + branch_line + " && !defined(CONFIG_KSU_MANUAL_HOOK)" + runtime_text[line_end:]
+    raise SystemExit("Could not uniquely identify SUSFS runtime branch for Manual Hook precedence; diagnostic source uploaded")
+runtime_text = "\n".join(runtime_lines) + ("\n" if runtime_text.endswith("\n") else "")
 runtime_path.write_text(runtime_text)
 
 # Normalize only whitespace artifacts introduced by the pinned patch/script.
