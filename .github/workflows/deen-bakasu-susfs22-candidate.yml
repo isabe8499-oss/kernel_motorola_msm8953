@@ -313,7 +313,21 @@ jobs:
               proc_path.write_text(proc)
           if direct_include not in proc_path.read_text():
               raise SystemExit("OPEN_REDIRECT SUSFS header is not directly included in fs/proc/base.c")
-          print("OPEN_REDIRECT legacy predicate and direct procfs header include verified.")
+
+          # The partially applicable upstream hunk also adds the predicate to
+          # generic_readlink() in fs/namei.c. Ensure its header is visible too.
+          namei_path = Path("fs/namei.c")
+          namei = namei_path.read_text()
+          namei_anchor = "#include <linux/namei.h>\n"
+          if namei_anchor not in namei:
+              raise SystemExit("Cannot locate include anchor in fs/namei.c")
+          namei_direct = namei_anchor + "#include <linux/susfs_def.h>\n"
+          if namei_direct not in namei:
+              namei = namei.replace(namei_anchor, namei_direct, 1)
+              namei_path.write_text(namei)
+          if namei_direct not in namei_path.read_text():
+              raise SystemExit("OPEN_REDIRECT SUSFS header is not directly included in fs/namei.c")
+          print("OPEN_REDIRECT predicate and SUSFS header visibility verified for procfs and namei.")
           PY
           grep -q '^#define SUSFS_IS_INODE_OPEN_REDIRECT' include/linux/susfs_def.h
           grep -q '#include <linux/susfs_def.h>' fs/proc/base.c
