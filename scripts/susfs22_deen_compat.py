@@ -705,6 +705,18 @@ if avc_rej:
     avc_rej.unlink()
     manifest.append("security/selinux/avc.c.rej\tMANUALLY_ADAPTED\tAdded required bypass_orig_flow label at the 3.18 AVC flow")
 
+# In this candidate SUSFS is a feature layer, not the selected inline-hook method.
+# When Manual Hook and SUSFS are both enabled, prefer the Manual Hook branch in
+# ksud_integration.c; otherwise AUTO_INITRC references ksu_init_rc_hook while the
+# SUSFS branch defines ksu_is_init_rc_hook_enabled, causing an undefined symbol.
+runtime_path = root / "drivers/kernelsu/runtime/ksud_integration.c"
+runtime_text = runtime_path.read_text()
+old_runtime_branch = "#elif defined(CONFIG_KSU_SUSFS)\n    DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"
+new_runtime_branch = "#elif defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)\n    DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"
+if runtime_text.count(old_runtime_branch) != 1:
+    raise SystemExit("Could not uniquely locate SUSFS runtime branch for Manual Hook precedence fix")
+runtime_path.write_text(runtime_text.replace(old_runtime_branch, new_runtime_branch, 1))
+
 # Normalize only whitespace artifacts introduced by the pinned patch/script.
 ns = root / "fs/namespace.c"
 ns_data = ns.read_text()
