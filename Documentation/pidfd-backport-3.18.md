@@ -16,7 +16,7 @@ It deliberately uses the upstream syscall numbers:
 
 ## Runtime smoke test
 
-Build `tools/pidfd_open_test.c` and run it on the device after booting a kernel built from this branch. Success prints a valid fd and confirms `FD_CLOEXEC`. Exit status 2 with `ENOSYS` means the syscall number is not wired to the implementation.
+Build `tools/pidfd_open_test.c` and run it on the device after booting a kernel built from this branch. The test checks that `pidfd_open(getpid(), 0)` returns a valid fd with `FD_CLOEXEC`, that `pidfd_send_signal(fd, 0, NULL, 0)` succeeds, and that using the closed fd returns `EBADF`. Exit status 2 with `ENOSYS` means `pidfd_open` is not wired to the implementation.
 
 ## Validation status / review checklist
 
