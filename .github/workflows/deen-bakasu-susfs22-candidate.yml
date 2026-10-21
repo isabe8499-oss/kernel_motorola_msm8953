@@ -372,7 +372,7 @@ jobs:
                       changed.append("kernel/sys.c:setresuid")
                       i = j
               i += 1
-          p.write_text("\\n".join(lines) + "\\n")
+          p.write_text("\n".join(lines) + "\n")
 
           p = Path("fs/read_write.c")
           lines = p.read_text().splitlines()
@@ -387,9 +387,9 @@ jobs:
                       changed.append("fs/read_write.c:sys_read")
                       i = j
               i += 1
-          p.write_text("\\n".join(lines) + "\\n")
+          p.write_text("\n".join(lines) + "\n")
           Path("artifacts/manual-inline-hook-suppression.txt").write_text(
-              "\\n".join(changed) + ("\\n" if changed else "No duplicate direct manual/initrc hook blocks detected; manual hook path preserved.\\n")
+              "\n".join(changed) + ("\n" if changed else "No duplicate direct manual/initrc hook blocks detected; manual hook path preserved.\n")
           )
           print("Manual/inline overlap audit:", changed or "no duplicate blocks found")
           PY
