@@ -272,15 +272,36 @@ jobs:
           cat artifacts/deferred-feature-contract.txt
           git diff --check
 
-      - name: Preserve existing BakaSU hooks and audit SUSFS driver discovery
+      - name: Keep existing BakaSU root hooks active in SUSFS hook mode
         run: |
           set -euo pipefail
-          mkdir -p artifacts
-          grep -n -B 12 -A 12 'ksu_handle_sys_reboot' kernel/reboot.c | tee artifacts/reboot-hook-check.txt || true
-          grep -R -n 'ksu_handle_sys_reboot' drivers/kernelsu kernel/reboot.c | tee artifacts/reboot-driver-discovery.txt || true
-          if ! grep -R -q 'ksu_handle_sys_reboot' kernel/reboot.c drivers/kernelsu; then
-            echo 'No BakaSU reboot-discovery call present in this source integration.' | tee artifacts/reboot-hook-warning.txt
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          files = {
+              "fs/exec.c": 5,
+              "fs/open.c": 1,
+              "fs/stat.c": 3,
+          }
+          old = "#ifdef CONFIG_KSU_MANUAL_HOOK"
+          new = "#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)"
+          for name, expected in files.items():
+              p = Path(name)
+              s = p.read_text()
+              count = s.count(old)
+              if count != expected:
+                  raise SystemExit(f"{name}: expected {expected} existing BakaSU hook guards, found {count}; refusing to guess")
+              s = s.replace(old, new)
+              p.write_text(s)
+              print(f"{name}: enabled {count} existing BakaSU hook guards for SUSFS mode")
+          PY
+          # The selected SUSFS hook mode must keep the legacy BakaSU call sites compiled.
+          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/exec.c)" -eq 5
+          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/open.c)" -eq 1
+          test "$(grep -c '#if defined(CONFIG_KSU_MANUAL_HOOK) || defined(CONFIG_KSU_SUSFS)' fs/stat.c)" -eq 3
+          grep -q 'ksu_handle_execveat' fs/exec.c
+          grep -q 'ksu_handle_post_execveat' fs/exec.c
+          grep -q 'ksu_handle_faccessat' fs/open.c
+          grep -q 'ksu_handle_stat' fs/stat.c
 
       - name: Validate legacy BakaSU hooks and record reboot discovery audit
         run: |
