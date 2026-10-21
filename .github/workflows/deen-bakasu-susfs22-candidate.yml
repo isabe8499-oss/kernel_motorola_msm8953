@@ -443,7 +443,7 @@ jobs:
           find out/arch/arm64/boot/dts -type f -name '*.dtb' -exec cp {} artifacts/ \; 2>/dev/null || true
           cp bakasu-source-commit.txt artifacts/
           {
-            echo '## Deen BakaSU + SUSFS v2.2 experimental stage-2 (#55) build'
+            echo '## Deen BakaSU + SUSFS v2.2 experimental stage-2 (#58) build'
             echo 'Preserves the known-working GCC 4.9 manual-hook configuration. Enables SUSFS spoof-uname, logging, symbol hiding and cmdline/bootconfig spoofing; SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP enabled for an experimental compile; OPEN_REDIRECT is requested experimentally; runtime VFS integration is not assumed functional.'
             echo 'Experimental candidate only: CI success does not prove device boot/runtime compatibility.'
             cat artifacts/patch-status.txt
@@ -459,9 +459,9 @@ jobs:
           git -C anykernel checkout --detach "$AK3_COMMIT"
           cp artifacts/Image.gz-dtb anykernel/Image.gz-dtb
           cat > anykernel/anykernel.sh <<'AK3'
-          ### Deen XT1941-3 BakaSU + SUSFS v2.2 experimental OPEN_REDIRECT stage-2 Workflow #55 kernel
+          ### Deen XT1941-3 BakaSU + SUSFS v2.2 experimental OPEN_REDIRECT stage-2 Workflow #58 kernel
           properties() { '
-          kernel.string=Deen BakaSU + SUSFS v2.2 OPEN_REDIRECT stage 2 GCC 4.9 (experimental #55)
+          kernel.string=Deen BakaSU + SUSFS v2.2 OPEN_REDIRECT stage 2 GCC 4.9 (experimental #58)
           do.devicecheck=1
           do.modules=0
           do.systemless=1
@@ -482,7 +482,7 @@ jobs:
           write_boot
           AK3
           cat > anykernel/SUSFS-STAGE2-OPEN-REDIRECT-WORKFLOW55-EXPERIMENTAL.txt <<'NOTE'
-          EXPERIMENTAL SUSFS v2.2 STAGE-2 OPEN_REDIRECT BUILD (#55)
+          EXPERIMENTAL SUSFS v2.2 STAGE-2 OPEN_REDIRECT BUILD (#58)
           Target: Motorola One Deen / XT1941-3, Linux 3.18.140.
           Keeps the known-working GCC 4.9 BakaSU manual-hook setup.
           Requested SUSFS options: the eight features from Workflow #54 plus OPEN_REDIRECT. Experimental build; compile success does not prove the redirect hook is integrated or safe at runtime.
@@ -492,9 +492,9 @@ jobs:
           cd anykernel
           zip -qr9 ../artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip . -x '.git/*' '.github/*' 'README.md' 'LICENSE'
           cd ..
-          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip
-          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
-          test -s artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow55-TWRP.zip
+          unzip -t artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip
+          sha256sum artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip | tee artifacts/flashable-zip-sha256.txt
+          test -s artifacts/Deen-BakaSU-SUSFS22-Stage2-OPEN-REDIRECT-Workflow58-TWRP.zip
 
       - name: Upload BakaSU GCC 4.9 TWRP package and diagnostics
         if: success()
