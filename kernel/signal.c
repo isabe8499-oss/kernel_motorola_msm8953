@@ -3763,6 +3763,11 @@ static bool pidfd_access_pidns(struct pid *pid)
 	return false;
 }
 
+static struct pid *pidfd_to_pid(const struct file *file)
+{
+	return pidfd_pid(file);
+}
+
 SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
 		struct siginfo __user *, uinfo, unsigned int, flags)
 {
@@ -3780,7 +3785,7 @@ SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig,
 	if (!file)
 		return -EBADF;
 
-	pid = pidfd_pid(file);
+	pid = pidfd_to_pid(file);
 	if (IS_ERR(pid)) {
 		ret = PTR_ERR(pid);
 		goto out;
