@@ -745,16 +745,16 @@ seccomp_text = seccomp_text.replace("\n \tatomic_t filter_count;", "\n\tatomic_t
 seccomp.write_text(seccomp_text)
 
 (artifacts / "deferred-feature-contract.txt").write_text(
-    "SUSFS v2.2 Linux 3.18 experimental compatibility profile — SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP are enabled after compatibility adaptations; OPEN_REDIRECT remains deferred because its Linux 3.18 VFS/proc integration is not implemented. Build success is not runtime/boot validation.\\n"
-    "KSU_SUSFS_SUS_PATH=y\\n"
-    "KSU_SUSFS_SUS_MOUNT=y\\n"
-    "KSU_SUSFS_SUS_KSTAT=y\\n"
-    "KSU_SUSFS_OPEN_REDIRECT=n\\n"
-    "KSU_SUSFS_SUS_MAP=y\\n"
-    "KSU_SUSFS_SPOOF_UNAME=y\\n"
-    "KSU_SUSFS_ENABLE_LOG=y\\n"
-    "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y\\n"
-    "KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y\\n"
+    "SUSFS v2.2 Linux 3.18 experimental compatibility profile — SUS_PATH, SUS_MOUNT, SUS_KSTAT and SUS_MAP are enabled after compatibility adaptations; OPEN_REDIRECT remains deferred because its Linux 3.18 VFS/proc integration is not implemented. Build success is not runtime/boot validation.\n"
+    "KSU_SUSFS_SUS_PATH=y\n"
+    "KSU_SUSFS_SUS_MOUNT=y\n"
+    "KSU_SUSFS_SUS_KSTAT=y\n"
+    "KSU_SUSFS_OPEN_REDIRECT=n\n"
+    "KSU_SUSFS_SUS_MAP=y\n"
+    "KSU_SUSFS_SPOOF_UNAME=y\n"
+    "KSU_SUSFS_ENABLE_LOG=y\n"
+    "KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y\n"
+    "KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y\n"
 )
 (artifacts / "hunk-disposition.tsv").write_text("\n".join(manifest) + "\n")
 (artifacts / "patch-status.txt").write_text(
