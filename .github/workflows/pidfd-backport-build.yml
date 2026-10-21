@@ -1,0 +1,102 @@
+name: pidfd backport build (deen arm64)
+
+on:
+  push:
+    branches:
+      - backport/pidfd-3.18-arm64-v2
+  pull_request:
+    branches:
+      - lineage-18.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev \
+            libncurses5-dev libncursesw5-dev python3 python-is-python3 unzip zip wget git
+
+      - name: Install Android GCC 4.9 toolchain
+        run: |
+          git clone --depth=1 https://github.com/KudProject/aarch64-linux-android-4.9.git "$RUNNER_TEMP/aarch64-gcc"
+          test -x "$RUNNER_TEMP/aarch64-gcc/bin/aarch64-linux-android-gcc"
+          "$RUNNER_TEMP/aarch64-gcc/bin/aarch64-linux-android-gcc" --version
+          echo "$RUNNER_TEMP/aarch64-gcc/bin" >> "$GITHUB_PATH"
+
+      - name: Configure and compile
+        env:
+          ARCH: arm64
+          CROSS_COMPILE: aarch64-linux-android-
+        run: |
+          make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" deen_defconfig
+          make -j"$(nproc)" O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          gcc -Wall -Wextra -O2 tools/testing/selftests/pidfd/pidfd_open_test.c -o out/pidfd_open_test
+
+      - name: Verify BakaSU and SUSFS base is present
+        id: targetbase
+        run: |
+          if grep -q '^CONFIG_KSU_SUSFS=y' out/.config && \
+             [ -f KernelSU/kernel/Kconfig ] && [ -f fs/susfs.c ]; then
+            echo "target_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "target_ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::This branch lacks the expected BakaSU/SUSFS 2.2 source/config. A flashable ZIP will NOT be produced from this plain kernel tree."
+          fi
+
+      - name: Package TWRP-flashable AnyKernel ZIP
+        if: steps.targetbase.outputs.target_ready == 'true'
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git "$RUNNER_TEMP/AnyKernel3"
+          cp out/arch/arm64/boot/Image.gz-dtb "$RUNNER_TEMP/AnyKernel3/Image.gz-dtb"
+          cat > "$RUNNER_TEMP/AnyKernel3/anykernel.sh" <<'AK'
+          #!/sbin/sh
+          # AnyKernel3 kernel-only installer for Motorola One (deen).
+          properties() { '
+          kernel.string=Deen pidfd backport (Linux 3.18.140)
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=0
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=deen
+          device.name2=deen
+          supported.versions=
+          supported.patchlevels=
+          '; }
+          BLOCK=boot;
+          IS_SLOT_DEVICE=1;
+          RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
+          . tools/ak3-core.sh;
+          dump_boot;
+          write_boot;
+          AK
+          chmod 0755 "$RUNNER_TEMP/AnyKernel3/anykernel.sh"
+          cd "$RUNNER_TEMP/AnyKernel3"
+          zip -r9 "$GITHUB_WORKSPACE/Deen-pidfd-backport-AnyKernel3.zip" . -x '.git/*' 'README.md' '.*'
+          test -s "$GITHUB_WORKSPACE/Deen-pidfd-backport-AnyKernel3.zip"
+          unzip -l "$GITHUB_WORKSPACE/Deen-pidfd-backport-AnyKernel3.zip"
+
+      - name: Upload kernel image and ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: deen-pidfd-build-diagnostic-not-for-flashing
+          path: |
+            out/arch/arm64/boot/Image.gz-dtb
+            out/pidfd_open_test
+            Deen-pidfd-backport-AnyKernel3.zip
+          if-no-files-found: warn
+          retention-days: 14

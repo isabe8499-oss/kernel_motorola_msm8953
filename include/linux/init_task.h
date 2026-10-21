@@ -80,6 +80,7 @@ extern struct group_info init_groups;
 		{ .first = NULL },					\
 	},								\
 	.level		= 0,						\
+	.wait_pidfd	= __WAIT_QUEUE_HEAD_INITIALIZER(init_struct_pid.wait_pidfd),\
 	.numbers	= { {						\
 		.nr		= 0,					\
 		.ns		= &init_pid_ns,				\

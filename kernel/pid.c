@@ -38,6 +38,8 @@
 #include <linux/syscalls.h>
 #include <linux/proc_ns.h>
 #include <linux/proc_fs.h>
+#include <linux/anon_inodes.h>
+#include <linux/poll.h>
 
 #define pid_hashfn(nr, ns)	\
 	hash_long((unsigned long)nr + (unsigned long)ns, pidhash_shift)
@@ -326,6 +328,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	atomic_set(&pid->count, 1);
 	for (type = 0; type < PIDTYPE_MAX; ++type)
 		INIT_HLIST_HEAD(&pid->tasks[type]);
+	init_waitqueue_head(&pid->wait_pidfd);
 
 	upid = pid->numbers + ns->level;
 	spin_lock_irq(&pidmap_lock);
@@ -568,6 +571,90 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
  * machine.  From a minimum of 16 slots up to 4096 slots at one gigabyte or
  * more.
  */
+/*
+ * pidfd support backported from Linux v5.4 (pidfd_open) and v5.10
+ * (pidfd file operations). The descriptor holds struct pid rather than a
+ * numeric PID, so PID reuse cannot retarget an existing descriptor.
+ */
+struct pid *pidfd_pid(const struct file *file)
+{
+	if (file->f_op == &pidfd_fops)
+		return file->private_data;
+
+	return ERR_PTR(-EBADF);
+}
+
+static int pidfd_release(struct inode *inode, struct file *file)
+{
+	struct pid *pid = file->private_data;
+
+	file->private_data = NULL;
+	put_pid(pid);
+	return 0;
+}
+
+static unsigned int pidfd_poll(struct file *file, poll_table *wait)
+{
+	struct pid *pid = file->private_data;
+	struct task_struct *task;
+	unsigned int mask = 0;
+
+	poll_wait(file, &pid->wait_pidfd, wait);
+	rcu_read_lock();
+	task = pid_task(pid, PIDTYPE_PID);
+	if (!task || (task->exit_state && thread_group_empty(task)))
+		mask = POLLIN | POLLRDNORM;
+	rcu_read_unlock();
+
+	return mask;
+}
+
+const struct file_operations pidfd_fops = {
+	.release = pidfd_release,
+	.poll = pidfd_poll,
+};
+
+static int pidfd_create(struct pid *pid)
+{
+	int fd;
+
+	fd = anon_inode_getfd("[pidfd]", &pidfd_fops, get_pid(pid),
+			     O_RDWR | O_CLOEXEC);
+	if (fd < 0)
+		put_pid(pid);
+
+	return fd;
+}
+
+/* pidfd_open() - open a descriptor referring to a process; flags must be 0. */
+SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
+{
+	struct pid *p;
+	int ret = 0, fd;
+
+	if (flags)
+		return -EINVAL;
+	if (pid <= 0)
+		return -EINVAL;
+
+	p = find_get_pid(pid);
+	if (!p)
+		return -ESRCH;
+
+	rcu_read_lock();
+	{
+		struct task_struct *task = pid_task(p, PIDTYPE_PID);
+
+		if (!task || task != task->group_leader)
+			ret = -EINVAL;
+	}
+	rcu_read_unlock();
+
+	fd = ret ? ret : pidfd_create(p);
+	put_pid(p);
+	return fd;
+}
+
 void __init pidhash_init(void)
 {
 	unsigned int i, pidhash_size;
