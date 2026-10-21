@@ -5,6 +5,7 @@ on:
     branches:
       - deen-bakasu-susfs22-root-preserve
       - backport/pidfd-bakasu-susfs22
+      - feature/susfs-open-redirect-3.18-experimental
   workflow_dispatch:
 
 permissions:
