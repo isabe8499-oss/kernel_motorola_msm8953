@@ -25,8 +25,9 @@ core_exit = core_match.group(1)
 deferred_dir = artifacts / "deferred-hunks"
 deferred_dir.mkdir(parents=True, exist_ok=True)
 
-# These rejected hunks are exclusively behind features disabled by this
-# allowlisted candidate profile; review the source hunks before changing this.
+# Preserve all rejected hunks as audit artifacts. Some are explicitly adapted
+# below for Linux 3.18; others remain deferred. Review source hunks before changing
+# this allowlist or the disposition logic.
 deferred = {
     "fs/namei.c.rej": "SUS_PATH and OPEN_REDIRECT entry integration adapted to Linux 3.18",
     "fs/namespace.c.rej": "SUS_MOUNT code adapted for Linux 3.18; enabled only in staged candidate build",
@@ -964,6 +965,8 @@ for rel, reason in deferred.items():
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MOUNT proc-fd code adapted for Linux 3.18; enabled only in staged candidate build")
     elif rel == "fs/proc/task_mmu.c.rej":
         manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tSUS_MAP code adapted for Linux 3.18; enabled only in staged candidate build")
+    elif rel == "fs/proc/base.c.rej":
+        manifest.append(f"{rel}\tPARTIALLY_ADAPTED\tOPEN_REDIRECT proc readlink adapter applied for Linux 3.18; original rejected hunk preserved for audit")
     else:
         manifest.append(f"{rel}\tDEFERRED\t{reason}")
     src.unlink()
