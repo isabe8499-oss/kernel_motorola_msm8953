@@ -130,6 +130,7 @@ replace_once(
     nomount_h,
     "#include <linux/compat.h>\n",
     """#include <linux/compat.h>
+#include <linux/dcache.h>
 #include <linux/spinlock.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
