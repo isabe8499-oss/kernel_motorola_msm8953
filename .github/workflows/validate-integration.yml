@@ -74,6 +74,22 @@ jobs:
           grep -q 'default n' fs/nomount/Kconfig
           ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
 
+      - name: Compile NoMount against the Linux 3.18 ARM64 headers
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu bc bison flex libssl-dev libelf-dev
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- deen_defconfig
+          if grep -q '^# CONFIG_NOMOUNT is not set$' .config; then
+            sed -i 's/^# CONFIG_NOMOUNT is not set$/CONFIG_NOMOUNT=y/' .config
+          else
+            echo 'CONFIG_NOMOUNT=y' >> .config
+          fi
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -q '^CONFIG_NOMOUNT=y$' .config
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 fs/nomount/nomount.o
+          test -s fs/nomount/nomount.o
+          file fs/nomount/nomount.o
       - name: Confirm kernel features remain gated
         shell: bash
         run: |
@@ -81,4 +97,4 @@ jobs:
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y' arch/arm64/configs/deen_defconfig
           ! grep -q '^CONFIG_KSU_SUSFS=y' arch/arm64/configs/deen_defconfig
           ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
-          echo "BakaSU Manual Hook and source staging validated; SUSFS/NoMount remain disabled pending full 3.18 VFS port."
+          echo "BakaSU Manual Hook and SUSFS staging passed; NoMount 3.18 object compile is checked separately from the shipped config."
