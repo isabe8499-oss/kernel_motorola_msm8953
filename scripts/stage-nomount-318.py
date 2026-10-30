@@ -192,13 +192,16 @@ for old_hash, new_hash, label in (
         "nm_seeded_name_hash((unsigned long)NM_MAGIC_SIG, (const unsigned char *)name, name_len)",
         "NoMount seeded child insertion hash",
     ),
-    (
-        "full_name_hash((const void *)(unsigned long)NM_MAGIC_SIG, path, len)",
-        "nm_seeded_name_hash((unsigned long)NM_MAGIC_SIG, (const unsigned char *)path, len)",
-        "NoMount seeded leaf lookup path hash",
-    ),
 ):
     replace_once(nomount_c, old_hash, new_hash, label)
+
+# Two source paths use the same salted pathname hash expression.
+path_hash_old = "full_name_hash((const void *)(unsigned long)NM_MAGIC_SIG, path, len)"
+path_hash_new = "nm_seeded_name_hash((unsigned long)NM_MAGIC_SIG, (const unsigned char *)path, len)"
+path_hash_source = read(nomount_c)
+if path_hash_source.count(path_hash_old) != 2:
+    raise SystemExit("NoMount seeded pathname hash: expected two legacy call sites")
+write(nomount_c, path_hash_source.replace(path_hash_old, path_hash_new))
 
 # filldir_t in 3.18 takes void *; newer dir_context actors take struct dir_context *.
 replace_once(
