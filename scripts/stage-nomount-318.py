@@ -179,6 +179,13 @@ replace_once(
     "NoMount legacy xattr dispatch",
 )
 
+replace_once(
+    nomount_c,
+    "    if (!r_inode || !r_inode->i_op || !r_inode->i_op->listxattr) return 0;\n    return vfs_listxattr(info->r_path.dentry, buffer, size);",
+    "    if (!r_inode) return 0;\n    return vfs_listxattr(info->r_path.dentry, buffer, size);",
+    "NoMount preserve security listxattr fallback",
+)
+
 # Linux 3.18 symlink operations use follow_link/put_link; get_link arrived in 4.5.
 old_get_link = """static const char *nm_get_link(struct dentry *dentry, struct inode *inode, struct delayed_call *done)
 {
