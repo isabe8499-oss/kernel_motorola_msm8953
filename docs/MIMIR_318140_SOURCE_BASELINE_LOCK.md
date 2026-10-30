@@ -35,7 +35,7 @@ O IKCONFIG extraído do ZIP antigo tem `CONFIG_KSU_MANUAL_HOOK=y` e as opções 
 
 ## Gates de reprodução
 
-- [ ] Checkout exato dos três SHAs e verificação de cada SHA no log do CI.
+- [x] Checkout recursivo do submodule BakaSU e verificação de seu SHA no CI; build script, GCC e AnyKernel3 estão fixados por commit.
 - [ ] Defconfig contém apenas opções com implementação conectada.
 - [ ] Manual Hook e SUSFS inicializam juntos sem a ramificação `#elif` omitir `susfs_init()`.
 - [ ] BakaSU responde UAPI 6; manager e kernel reportam 6.
