@@ -90,8 +90,9 @@ O repositório `wxx9248/susfs4ksu` contém uma porta SUSFS 2.3.0 para Linux 4.9.
 
 - [x] SUSFS v2.2.0 fixado como submódulo Git.
 - [x] Workflow valida SHA e existência dos três arquivos core.
-- [ ] Core copiado/ligado ao Kbuild.
-- [ ] Port Linux 3.18 concluído.
+- [x] `scripts/prepare-susfs-318.py` criado e ligado ao workflow para copiar o core, adicionar o objeto condicional e aplicar shims de static key/fsnotify.
+- [ ] Execução do workflow confirma o staging e a compilação do objeto.
+- [ ] Port Linux 3.18 dos call sites VFS/proc/mm concluído.
 - [ ] Kconfig coexistindo com BakaSU Manual Hook.
 - [ ] Build ARM64 concluído.
 - [ ] Recursos funcionais validados no dispositivo.
