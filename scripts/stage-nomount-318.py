@@ -59,12 +59,12 @@ def wrap_region(path, start, end, opening, closing, label):
     path.write_text(content)
 
 
-# Linux 3.18 still uses is_compat_task() for the 32-bit compat ABI.
+# in_compat_syscall() was added in Linux 4.6; 3.18 uses is_compat_task().
 nomount_h = TARGET / "nomount.h"
 replace_once(
     nomount_h,
     '#define NOMOUNT_BASE_VERSION "22"',
-    '#define NOMOUNT_BASE_VERSION "22"\n#define NM_LINUX_318_PORT 1\n\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)\n#define in_compat_syscall() is_compat_task()\n#endif',
+    '#define NOMOUNT_BASE_VERSION "22"\n#define NM_LINUX_318_PORT 1\n\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)\n#define in_compat_syscall() is_compat_task()\n#endif',
     "NoMount 3.18 port marker and compat syscall helper",
 )
 
