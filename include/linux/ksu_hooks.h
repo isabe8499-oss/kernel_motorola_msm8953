@@ -7,7 +7,7 @@
 struct filename;
 
 /* BakaSU UAPI reboot hand-off magic, kept in sync with uapi/supercall.h. */
-#define KSU_INSTALL_MAGIC1 0xDEADBEEF
+#define KSU_INSTALL_MAGIC1 ((int)0xDEADBEEF)
 
 int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
 		void *argv, void *envp, int *flags);
