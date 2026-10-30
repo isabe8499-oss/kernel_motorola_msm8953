@@ -1508,6 +1508,9 @@ static int do_execve_common(struct filename *filename,
 
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, NULL);
+#endif
 
 	/*
 	 * We move the actual failure in case of RLIMIT_NPROC excess from
@@ -1612,6 +1615,10 @@ static int do_execve_common(struct filename *filename,
 	acct_update_integrals(current);
 	task_numa_free(current);
 	free_bprm(bprm);
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_post_execveat((int *)AT_FDCWD, &filename, &argv, &envp,
+				 NULL, &retval);
+#endif
 	putname(filename);
 	if (displaced)
 		put_files_struct(displaced);
@@ -1634,6 +1641,10 @@ out_files:
 	if (displaced)
 		reset_files_struct(displaced);
 out_ret:
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	ksu_handle_post_execveat((int *)AT_FDCWD, &filename, &argv, &envp,
+				 NULL, &retval);
+#endif
 	putname(filename);
 	return retval;
 }
@@ -1644,17 +1655,7 @@ int do_execve(struct filename *filename,
 {
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
-#ifdef CONFIG_KSU_MANUAL_HOOK
-	int retval;
-
-	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, NULL);
-	retval = do_execve_common(filename, argv, envp);
-	ksu_handle_post_execveat((int *)AT_FDCWD, &filename, &argv, &envp,
-				 NULL, &retval);
-	return retval;
-#else
 	return do_execve_common(filename, argv, envp);
-#endif
 }
 
 #ifdef CONFIG_COMPAT
@@ -1670,17 +1671,7 @@ static int compat_do_execve(struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
-#ifdef CONFIG_KSU_MANUAL_HOOK
-	int retval;
-
-	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, NULL);
-	retval = do_execve_common(filename, argv, envp);
-	ksu_handle_post_execveat((int *)AT_FDCWD, &filename, &argv, &envp,
-				 NULL, &retval);
-	return retval;
-#else
 	return do_execve_common(filename, argv, envp);
-#endif
 }
 #endif
 
