@@ -99,11 +99,14 @@ for path in nomount_candidates:
     if not path.is_file():
         missing.append(f"NoMount Linux 3.18 port missing: {path.relative_to(ROOT)}")
 nomount_text = ""
+nomount_header = ""
 if nomount_candidates[0].is_file():
     nomount_text = nomount_candidates[0].read_text(errors="replace")
-if '#define NOMOUNT_BASE_VERSION "22"' not in nomount_text:
+if (ROOT / "fs/nomount/nomount.h").is_file():
+    nomount_header = (ROOT / "fs/nomount/nomount.h").read_text(errors="replace")
+if '#define NOMOUNT_BASE_VERSION "22"' not in nomount_header:
     missing.append("NoMount source is not the pinned v2.2.0/protocol-22 implementation")
-if "#define NM_LINUX_318_PORT 1" not in nomount_text:
+if "#define NM_LINUX_318_PORT 1" not in nomount_header:
     missing.append("NoMount Linux 3.18 compatibility port marker is missing")
 
 if missing:
@@ -114,5 +117,20 @@ if missing:
     print("BakaSU + SUSFS 2.2.0 + NoMount 2.2.0 integration.")
     sys.exit(1)
 
-print("MIMIR INTEGRATION GATE: PASS")
-print("BakaSU Manual Hook, SUSFS 2.2.0 hooks and NoMount protocol v22 are present.")
+if missing:
+    report = [
+        "MIMIR INTEGRATION GATE: BLOCKED — refusing to produce a flashable ZIP.",
+        *[f" - {item}" for item in missing],
+        "",
+        "The current tree does not yet prove the complete BakaSU + SUSFS 2.2.0 + NoMount 2.2.0 integration.",
+    ]
+    print("\n".join(report))
+    (ROOT / "mimir-integration-gate.txt").write_text("\n".join(report) + "\n")
+    sys.exit(1)
+
+success = [
+    "MIMIR INTEGRATION GATE: PASS",
+    "BakaSU Manual Hook, SUSFS 2.2.0 hooks and NoMount protocol v22 are present.",
+]
+print("\n".join(success))
+(ROOT / "mimir-integration-gate.txt").write_text("\n".join(success) + "\n")
