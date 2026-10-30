@@ -532,7 +532,8 @@ replace_expected(
 \tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
 #endif
 \terror = iterate_dir(f.file, &buf.ctx);""",
-    2,\n    "getdents/getdents64 shared superblock selection",
+    2,
+    "getdents/getdents64 shared superblock selection",
 )
 replace_once(
     readdir,
