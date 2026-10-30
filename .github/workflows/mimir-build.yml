@@ -1,6 +1,19 @@
 name: Mimir-Kernel
 
 on:
+  push:
+    branches:
+      - integration/bakasu-35253-susfs22-nomount
+    paths:
+      - '.github/workflows/mimir-build.yml'
+      - 'scripts/**'
+      - 'arch/arm64/configs/deen_defconfig'
+      - 'drivers/**'
+      - 'fs/**'
+      - 'include/linux/**'
+      - '.gitmodules'
+      - 'KernelSU'
+      - 'SUSFS'
   workflow_dispatch:
     inputs:
       droidspaces:
@@ -13,7 +26,7 @@ on:
           - 'n'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -92,6 +105,9 @@ jobs:
       - name: Stage SUSFS v2.2.0 core with Linux 3.18 shims
         run: python3 scripts/prepare-susfs-318.py
 
+      - name: Gate complete BakaSU + SUSFS + NoMount integration
+        run: python3 scripts/check-mimir-integration.py
+
       - name: Notify Build Started
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
@@ -151,11 +167,11 @@ jobs:
       - name: Run build script
         id: build
         run: |
-          ARGS="${{ env.DEVICE }} -z"
+          ARGS="${{ env.DEVICE }} -z -ksu"
 
           {
-            echo "${{ github.event.inputs.droidspaces }}"
-            echo "y"
+            echo "${{ github.event.inputs.droidspaces || 'n' }}"
+            echo "n"
           } | ./build.sh $ARGS 2>&1 | tee build_output.log
 
           clean() {
@@ -185,63 +201,33 @@ jobs:
 
           if ls *.zip 1> /dev/null 2>&1; then
             echo "ZIP_FOUND=true" >> $GITHUB_ENV
+            sha256sum "$ZIP_FILE" > "$ZIP_FILE.sha256"
           else
             echo "ZIP_FOUND=false" >> $GITHUB_ENV
             exit 1
           fi
 
-      - name: Send Notification (Success)
+      - name: Upload flashable ZIP to GitHub Actions
         if: success()
-        run: |
-          BTN_TEXT="📥 Download (Gofile)"
-          BTN_URL="${{ env.ZIP_DOWNLOAD_LINK }}"
-          SERVER_LINE=""
-          if [ -n "${{ env.GOFILE_SERVER }}" ]; then
-            SERVER_LINE="🌐 *Server:* \`${{ env.GOFILE_SERVER }}\` (10 days)%0A"
-          fi
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mimir-Deen-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            *.zip
+            *.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
 
-          MSG="✅ *New Mimir Kernel build for ${{ env.DEVICE_NAME }} available!*%0A%0A"
-          MSG+="📦 *File:* \`${{ env.ZIP_FILENAME }}\`%0A"
-          MSG+="🛠️ *Compiler:* \`${{ env.TOOLCHAIN_VERSION }}\`%0A"
-          MSG+="⏱️ *Time:* \`${{ env.BUILD_DURATION }}\`%0A"
-          MSG+="$SERVER_LINE"
-          MSG+="🔐 *SHA256:* \`${{ env.ZIP_SHA256 }}\`"
-
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "parse_mode=markdown" \
-            -d "text=$MSG" \
-            -d "reply_markup={\"inline_keyboard\":[[{\"text\":\"$BTN_TEXT\",\"url\":\"$BTN_URL\"}]]}"
-
-      - name: Send Notification (Failure)
+      - name: Upload build diagnostics on failure
         if: failure()
-        run: |
-          [ -z "$ERROR_LOG_URL" ] && ERROR_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" || ERROR_URL="$ERROR_LOG_URL"
-
-          MESSAGE="❌ *Kernel build failed!*
-          📦 *Repo:* \`${{ env.REPO_NAME }}\`
-          🛠️  *Compiler:* \`${TOOLCHAIN_VERSION:-unknown}\`
-          🆔 *Run ID:* ${{ github.run_id }}"
-
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "parse_mode=markdown" \
-            -d "text=$MESSAGE" \
-            -d "reply_markup={\"inline_keyboard\":[[{\"text\":\"📂 View Error Log\",\"url\":\"$ERROR_URL\"}]]}"
-
-      - name: Send Notification (Cancelled)
-        if: cancelled()
-        run: |
-          MESSAGE="⏹️ *Kernel build was cancelled!*
-          📦 *Repo:* \`${{ env.REPO_NAME }}\`
-          🌿 *Branch:* \`${{ github.ref_name }}\`
-          🆔 *Run ID:* ${{ github.run_id }}"
-
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d "parse_mode=markdown" \
-            -d "text=$MESSAGE" \
-            -d "reply_markup={\"inline_keyboard\":[[{\"text\":\"🔄 View / Re-run\",\"url\":\"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}]]}"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mimir-Deen-diagnostics-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            build_output.log
+            build_log.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Cleanup workspace
         if: always()
