@@ -71,8 +71,14 @@ int vfs_getattr_nosec(struct path *path, struct kstat *stat)
 {
 	struct inode *inode = path->dentry->d_inode;
 
-	if (inode->i_op->getattr)
-		return inode->i_op->getattr(path->mnt, path->dentry, stat);
+	if (inode->i_op->getattr) {
+		int error = inode->i_op->getattr(path->mnt, path->dentry, stat);
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		if (!error)
+			susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
+#endif
+		return error;
+	}
 
 	generic_fillattr(inode, stat);
 	return 0;
