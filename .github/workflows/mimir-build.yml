@@ -50,11 +50,15 @@ jobs:
 
       - name: Verify pinned BakaSU submodule
         run: |
-          test -d KernelSU/.git
+          # A submodule checkout stores .git as a file pointing into the superproject's .git/modules.
+          test -e KernelSU/.git
+          test -f KernelSU/kernel/Kconfig
+          test -f KernelSU/kernel/Kbuild
           ACTUAL="$(git -C KernelSU rev-parse HEAD)"
           EXPECTED="5785bdb8091304322f597f67d50e0b79f9815cb2"
           echo "BakaSU submodule: $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
+          git -C KernelSU cat-file -e "$EXPECTED^{commit}"
           test -L drivers/kernelsu
           test "$(readlink drivers/kernelsu)" = "../KernelSU/kernel"
 
