@@ -223,12 +223,21 @@ static NM_ACTOR_RET nm_actor_proxy(struct dir_context *ctx, const char *name, in
     "NoMount legacy filldir actor signature",
 )
 
-# 3.18 has a global lock protecting sb->s_inodes, not s_inode_list_lock on sb.
+# Linux 3.18 protects every superblock inode list with the global
+# inode_sb_list_lock; it is not a member of struct super_block.
 source = read(nomount_c)
-lock_count = source.count("s_inode_list_lock")
+lock_pairs = (
+    ("&sb->s_inode_list_lock", "&inode_sb_list_lock"),
+    ("&nm_sop->sb->s_inode_list_lock", "&inode_sb_list_lock"),
+)
+lock_count = sum(source.count(old_lock) for old_lock, _ in lock_pairs)
 if lock_count != 4:
-    raise SystemExit(f"NoMount inode-list lock adapter: expected 4 references, found {lock_count}")
-write(nomount_c, source.replace("s_inode_list_lock", "inode_sb_list_lock"))
+    raise SystemExit(
+        f"NoMount inode-list lock adapter: expected four superblock lock references, found {lock_count}"
+    )
+for old_lock, new_lock in lock_pairs:
+    source = source.replace(old_lock, new_lock)
+write(nomount_c, source)
 
 # The 3.18 VFS dispatches xattrs through inode_operations. The handler-array
 # proxy API used by the newer NoMount source is retained only on 4.4+.
