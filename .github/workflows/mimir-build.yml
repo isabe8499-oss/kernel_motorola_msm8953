@@ -14,6 +14,7 @@ on:
       - '.gitmodules'
       - 'KernelSU'
       - 'SUSFS'
+      - 'NoMount'
   workflow_dispatch:
     inputs:
       droidspaces:
@@ -106,7 +107,7 @@ jobs:
           test -f SUSFS/kernel_patches/fs/susfs.c
           test -f SUSFS/kernel_patches/include/linux/susfs.h
           test -f SUSFS/kernel_patches/include/linux/susfs_def.h
-          test -f SUSFS/50_add_susfs_in_gki-android12-5.10.patch
+          test -f SUSFS/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
 
       - name: Apply BakaSU Linux 3.18 compatibility overlay
         run: |
