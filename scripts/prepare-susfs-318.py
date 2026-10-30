@@ -146,24 +146,58 @@ replace_once(
     "SUSFS/BakaSU no-su thread flag",
 )
 
-no_su_old = """static inline void susfs_set_current_proc_umounted(void) {
-\tset_thread_flag(TIF_PROC_UMOUNTED);
-}
-static inline bool susfs_is_current_proc_umounted_app(void) {"""
-no_su_new = """static inline void susfs_set_current_proc_umounted(void) {
-\tset_thread_flag(TIF_PROC_UMOUNTED);
-}
-static inline bool susfs_is_current_proc_no_su(void) {
-\treturn (likely(test_thread_flag(TIF_PROC_NO_SU)));
-}
-static inline void susfs_set_current_proc_no_su(void) {
-\tset_thread_flag(TIF_PROC_NO_SU);
-}
-static inline void susfs_clear_current_proc_no_su(void) {
-\tclear_thread_flag(TIF_PROC_NO_SU);
-}
-static inline bool susfs_is_current_proc_umounted_app(void) {"""
-replace_once(def_path, no_su_old, no_su_new, "BakaSU UAPI 6 no-su process helpers")
+def patch_no_su_helpers(path):
+    content = read(path)
+    helper_names = (
+        "susfs_is_current_proc_no_su",
+        "susfs_set_current_proc_no_su",
+        "susfs_clear_current_proc_no_su",
+    )
+    counts = {name: content.count(name) for name in helper_names}
+    if all(count == 1 for count in counts.values()):
+        return
+    if any(count for count in counts.values()):
+        raise SystemExit(f"Partial BakaSU no-su helper set already present: {counts}")
+
+    # Match the actual pinned upstream helper independent of tabs/spaces and
+    # CRLF/LF. Limit the match to this small function body, not the whole header.
+    pattern = re.compile(
+        r"(?m)^(?P<indent>[ \\t]*)static inline void "
+        r"susfs_set_current_proc_umounted\\s*\\(\\s*void\\s*\\)\\s*\\{"
+        r"\\s*(?P<body>[ \\t]*set_thread_flag\\s*\\(\\s*TIF_PROC_UMOUNTED\\s*\\)\\s*;\\s*)\\}"
+    )
+    matches = list(pattern.finditer(content))
+    if len(matches) != 1:
+        preview = repr(content[content.find("susfs_set_current_proc_umounted") - 48:
+                               content.find("susfs_set_current_proc_umounted") + 180])
+        raise SystemExit(
+            "BakaSU no-su helper insertion: expected one upstream "
+            "susfs_set_current_proc_umounted function; "
+            f"found={len(matches)}; source={preview}"
+        )
+
+    match = matches[0]
+    indent = match.group("indent")
+    helper_block = (
+        match.group(0)
+        + "\\n"
+        + indent + "static inline bool susfs_is_current_proc_no_su(void) {\\n"
+        + indent + "\\treturn likely(test_thread_flag(TIF_PROC_NO_SU));\\n"
+        + indent + "}\\n"
+        + indent + "static inline void susfs_set_current_proc_no_su(void) {\\n"
+        + indent + "\\tset_thread_flag(TIF_PROC_NO_SU);\\n"
+        + indent + "}\\n"
+        + indent + "static inline void susfs_clear_current_proc_no_su(void) {\\n"
+        + indent + "\\tclear_thread_flag(TIF_PROC_NO_SU);\\n"
+        + indent + "}\\n"
+    )
+    content = content[:match.start()] + helper_block + content[match.end():]
+    if any(content.count(name) != 1 for name in helper_names):
+        raise SystemExit("BakaSU no-su helper insertion did not produce exactly one of each helper")
+    write(path, content)
+
+import re
+patch_no_su_helpers(def_path)
 
 # Linux 3.18 static_key_slow_inc/dec are reference-counted. SUSFS 2.2 calls
 # static_branch_enable/disable on repeated manager requests, so make the
