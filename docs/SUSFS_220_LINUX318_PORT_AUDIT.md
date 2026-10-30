@@ -45,17 +45,17 @@ O port deve preservar esse conjunto. Não reduzir recursos apenas porque o patch
 
 ## Incompatibilidades que exigem porta explícita
 
-1. **Static keys.** O SUSFS 2.2.0 usa `DEFINE_STATIC_KEY_TRUE/FALSE`, `static_branch_likely`, `static_branch_enable` e `static_branch_disable`. O 3.18 já tem `STATIC_KEY_INIT_TRUE/FALSE`, `static_key_true/false`, `static_key_enabled` e `static_key_slow_inc/dec`, mas não os nomes modernos. Adicionar macros compatíveis para inicialização/leitura. Implementar enable/disable com mutex e checagem de `static_key_enabled()`: o comando de log chama enable/disable sem checar o estado, então mapear diretamente para slow_inc/slow_dec vazaria referências após toggles repetidos.
+1. **Static keys.** O binário antigo confirma `# CONFIG_JUMP_LABEL is not set`. Isso não impede SUSFS: o `jump_label.h` 3.18 tem fallback atômico para `static_key_true/false`, `static_key_enabled` e `static_key_slow_inc/dec`. O shim de staging adiciona os nomes modernos e serializa enable/disable com mutex + checagem de estado, evitando vazamento de referências em toggles repetidos. Não habilitar `CONFIG_JUMP_LABEL` artificialmente.
 2. **Header bits.** `linux/bits.h` não existe nesta árvore. O 3.18 já fornece `BIT()` e `GENMASK()` em `linux/bitops.h`; adaptar o include do `susfs_def.h`.
-3. **Nameidata.** `struct nameidata` do 3.18 não possui `state`. SUSFS SUS_PATH usa `ND_STATE_LOOKUP_LAST` e `ND_STATE_OPEN_LAST`. Adicionar campo `state` condicionado à feature e inicializá-lo em `set_nameidata()`; não reutilizar `flags` sem preservar os bits LOOKUP existentes.
-4. **filename_lookup.** A função existe em `fs/namei.c`, mas é `static` e usa assinatura antiga: `filename_lookup(int dfd, struct filename *name, unsigned int flags, struct nameidata *nd)`. Torná-la visível para os call sites SUSFS e declarar a assinatura exata em `fs/internal.h`; não copiar a assinatura de 4.9/5.10.
-5. **Path lookup.** O `lookup_slow()` do 3.18 usa `mutex_lock(&inode->i_mutex)` e `__lookup_hash()`; não usa o fluxo mais novo `inode_lock_shared()`/`d_alloc_parallel()`. Portar SUS_PATH para o algoritmo antigo, incluindo o caminho RCU de `lookup_fast()` e a repetição com qstr sentinela, sem deixar dentry em estado `in_lookup`.
+3. **Nameidata.** `struct nameidata` do 3.18 não possui `state`. O campo `state` já foi adicionado sob `CONFIG_KSU_SUSFS` e é inicializado em `path_init()` (o 3.18 não tem `set_nameidata()`). `ND_STATE_LOOKUP_LAST` e `ND_STATE_OPEN_LAST` permanecem separados de `flags`.
+4. **filename_lookup.** A função com assinatura 3.18 (`filename_lookup(int dfd, struct filename *name, unsigned int flags, struct nameidata *nd)`) já foi tornada global e declarada em `fs/internal.h` para os call sites SUSFS.
+5. **Path lookup.** O `lookup_slow()` do 3.18 usa `mutex_lock(&inode->i_mutex)` e `__lookup_hash()`; não usa `inode_lock_shared()`/`d_alloc_parallel()`. Os pontos SUS_PATH já foram adicionados sob `CONFIG_KSU_SUSFS_SUS_PATH` em `lookup_dcache()`, `__lookup_hash()`, nos caminhos RCU/ref de `lookup_fast()`, `walk_component()`, `link_path_walk()`, `lookup_last()`, `lookup_open()` e `do_last()`. Ainda precisam de compilação e testes de lookup concorrente.
 6. **Readdir.** `struct dir_context` usa `filldir_t actor` com primeiro argumento `void *`, e este fork tem `ctx->romnt`. Os callbacks `fillonedir/filldir/filldir64` também recebem `void *`. A porta deve obter o inode com o superblock da pasta, chamar `susfs_is_inode_sus_path()`, equilibrar `ilookup()/iput()` e preservar `romnt` e a semântica existente de ocultar `su`.
 7. **Kstat.** O `struct kstat` do 3.18 não tem o marcador `result_mask` usado pelo patch GKI. Seguir o padrão de compatibilidade usado no port 4.9: manter marcador local em `vfs_getattr_nosec()` e fazer a consulta SUSFS correspondente em `statfs` sem depender do campo inexistente.
-8. **Symlink/readlink.** O 3.18 usa `follow_link()`, `put_link()` e `nameidata`; o caminho de leitura pública é `generic_readlink()`. Não usar `get_link()`/ `delayed_call`.
+8. **Symlink/readlink.** O 3.18 usa `follow_link()`, `put_link()` e `nameidata`; o hook público de spoof readlink já foi adicionado em `generic_readlink()` sob `CONFIG_KSU_SUSFS_OPEN_REDIRECT`. Não usar `get_link()`/`delayed_call`.
 9. **Procfs/mm.** Usar `mmap_sem`, `show_map_vma()`, `show_smap()` e `pagemap_read()` existentes. Não copiar hooks para `smaps_rollup` ou bootconfig que não existem no 3.18; spoof de cmdline deve atuar em `fs/proc/cmdline.c` sobre `saved_command_line`.
-10. **Open redirect.** Adaptar os pontos de entrada do 3.18 (`do_filp_open()`, `path_openat()`, `do_last()`, `generic_readlink()`, `proc_pid_get_link()`, `show_map_vma()`) ao invés de copiar os hooks pré-open do GKI.
-11. **KSU hooks duplicados.** O port 4.9/Inline Hook adiciona chamadas para `ksu_handle_sys_read`, `ksu_handle_setresuid`, `ksu_handle_vfs_fstat`, `ksu_handle_sys_reboot` e input hooks. Nesta branch o método escolhido é BakaSU Manual Hook, com LSM/input automáticos e hooks manuais já instalados. Não adicionar chamadas duplicadas: condicionar os hooks Inline Hook ao seletor Inline Hook, preservando os hooks Manual Hook existentes.
+10. **Open redirect.** Os hooks de entrada em `do_filp_open()` e `generic_readlink()` já foram adicionados sob `CONFIG_KSU_SUSFS_OPEN_REDIRECT`; o restante ainda precisa ser portado para `proc_pid_get_link()`, `show_map_vma()` e `statfs`.
+11. **KSU hooks duplicados.** O port 4.9/Inline Hook adiciona chamadas para `ksu_handle_sys_read`, `ksu_handle_setresuid`, `ksu_handle_vfs_fstat`, `ksu_handle_sys_reboot` e input hooks. O overlay `scripts/apply-bakasu-318-compat.py` mantém BakaSU Manual Hook como método e separa `KSU_SUSFS` como feature; também prioriza Manual Hook no runtime initrc/input. Não adicionar chamadas Inline Hook duplicadas.
 
 
 ## Compatibilidade SUSFS 2.2.0 com o BakaSU 35253/6
@@ -63,6 +63,7 @@ O port deve preservar esse conjunto. Não reduzir recursos apenas porque o patch
 - O `sucompat.h` do BakaSU UAPI 6 usa `susfs_is_current_proc_no_su()` quando `CONFIG_KSU_SUSFS` está habilitado. O `susfs_def.h` oficial v2.2.0 não declara esse helper nem `TIF_PROC_NO_SU`; o helper aparece em versões posteriores. A porta local precisa acrescentar o bit livre `TIF_PROC_NO_SU 34` e os helpers `susfs_is_current_proc_no_su`, `susfs_set_current_proc_no_su` e `susfs_clear_current_proc_no_su`, sem alterar `SUSFS_VERSION`.
 - O `susfs.c` v2.2.0 usa `fsnotify_ops.handle_inode_event` com callback `(mark, mask, inode, dir, qstr, cookie)`. O 3.18 só tem `fsnotify_ops.handle_event` com `(group, inode, inode_mark, vfsmount_mark, mask, data, data_type, file_name, cookie)`. Adicionar um adaptador que construa `qstr` a partir de `file_name` e encaminhe para o handler SUSFS legado. O port 4.9/2.3.0 tem um exemplo dessa ponte; usar apenas como referência de API, não como fonte da versão.
 - O `fsnotify_alloc_group(&fsnotify_ops)` sem flags já é o caminho usado pelo 3.18 e pelo ramo legado do SUSFS; manter essa assinatura.
+- O staging script adapta também `fsnotify_init_mark(mark, NULL)` e `fsnotify_add_mark(mark, group, inode, NULL, 0)`, que são as assinaturas do 3.18, e adiciona `susfs_is_current_proc_no_su()` com `TIF_PROC_NO_SU=34` para satisfazer o BakaSU UAPI 6.
 ## Bug de bitmask encontrado na fonte 2.2.0
 
 Em `susfs.h`, a definição de `KSTAT_SPOOF_CTIME_TV_SEC` aparece como:
@@ -71,7 +72,7 @@ Em `susfs.h`, a definição de `KSTAT_SPOOF_CTIME_TV_SEC` aparece como:
 #define KSTAT_SPOOF_CTIME_TV_SEC (1 < 8)
 ```
 
-Isso avalia para `1`, colidindo com o bit `KSTAT_SPOOF_INO`. A porta local deve corrigir para `(1 << 8)` e manter a mesma definição compartilhada com o userspace/CLI, para não ativar spoof de campo errado.
+Isso avalia para `1`, colidindo com o bit `KSTAT_SPOOF_INO`. A porta precisa corrigir para `(1 << 8)` no kernel e na definição equivalente do userspace/CLI. A correção ainda não foi aplicada: não alterar apenas o header do kernel antes de localizar a definição do CLI, para não criar divergência de protocolo.
 
 ## Referência de porting antigo
 
@@ -81,8 +82,8 @@ O repositório `wxx9248/susfs4ksu` contém uma porta SUSFS 2.3.0 para Linux 4.9.
 
 1. Copiar os três arquivos core da subárvore SUSFS fixada para `fs/susfs.c` e `include/linux/susfs*.h` durante o build.
 2. Aplicar patch local Linux 3.18 para static keys, bits, nameidata, filename_lookup e VFS/proc/mm hooks.
-3. Adicionar `fs/susfs.o`, Kconfig e chamada de inicialização sem substituir BakaSU Manual Hook.
-4. Separar `KSU_SUSFS` (feature) de `KSU_SUSFS_INLINE_HOOK` (método de hook), preservando a ABI BakaSU UAPI 6.
+3. O staging script já adiciona `fs/susfs.o` e o overlay BakaSU separa `KSU_SUSFS` como feature independente, mantendo Manual Hook; a chamada `susfs_init()` fica no caminho Manual Hook.
+4. Manter a ABI BakaSU UAPI 6 e não expor Inline Hook como método para este kernel 3.18.
 5. Habilitar exatamente os recursos presentes no IKCONFIG antigo e compilar.
 6. Testar cada recurso isoladamente e em conjunto; depois validar boot e runtime no Motorola One Deen.
 
@@ -90,9 +91,11 @@ O repositório `wxx9248/susfs4ksu` contém uma porta SUSFS 2.3.0 para Linux 4.9.
 
 - [x] SUSFS v2.2.0 fixado como submódulo Git.
 - [x] Workflow valida SHA e existência dos três arquivos core.
-- [x] `scripts/prepare-susfs-318.py` criado e ligado ao workflow para copiar o core, adicionar o objeto condicional e aplicar shims de static key/fsnotify.
-- [ ] Execução do workflow confirma o staging e a compilação do objeto.
-- [ ] Port Linux 3.18 dos call sites VFS/proc/mm concluído.
+- [x] `scripts/prepare-susfs-318.py` criado e ligado ao workflow para copiar o core, adicionar o objeto condicional e aplicar shims de static key/fsnotify/no-su.
+- [x] `nameidata.state`, inicialização em `path_init()` e exportação de `filename_lookup()` adicionados.
+- [x] Call sites SUS_PATH em `fs/namei.c` e open redirect em `do_filp_open()`/`generic_readlink()` adicionados sob guards de configuração.
+- [ ] Execução do workflow confirma staging e compilação do objeto/call sites.
+- [ ] Restantes call sites Linux 3.18 de readdir, mount, kstat/statfs, procfs, cmdline, kallsyms e mm concluídos.
 - [ ] Kconfig coexistindo com BakaSU Manual Hook.
 - [ ] Build ARM64 concluído.
 - [ ] Recursos funcionais validados no dispositivo.
