@@ -125,6 +125,6 @@ jobs:
             CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
             CONFIG_KSU_SUSFS_ENABLE_LOG \
             CONFIG_NOMOUNT; do
-              grep -q "^\${symbol}=y$" "$DEFCONFIG"
+              grep -q "^${symbol}=y$" "$DEFCONFIG"
           done
           echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
