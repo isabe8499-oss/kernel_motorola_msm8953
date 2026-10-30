@@ -83,7 +83,7 @@ jobs:
           grep -q '.getxattr = nm_getxattr' fs/nomount/nomount.c
           grep -q 'KERNEL_VERSION(4, 7, 0)' fs/nomount/nomount.c
           grep -q 'KERNEL_VERSION(4, 7, 0)' fs/nomount/nomount.h
-          ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
 
       - name: Compile NoMount against Linux 3.18 ARM64 headers
         shell: bash
