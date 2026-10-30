@@ -60,6 +60,13 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
 #define LOOKUP_EMPTY		0x4000
 #define LOOKUP_NOCASE		0x8000
 
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+/* Private namei state and lookup flag bits reserved for SUS_PATH. */
+#define ND_STATE_LOOKUP_LAST	0x0001
+#define ND_STATE_OPEN_LAST	0x0002
+#define ND_FLAGS_LOOKUP_LAST	0x10000
+#endif
+
 extern int user_path_at(int, const char __user *, unsigned, struct path *);
 extern int user_path_at_empty(int, const char __user *, unsigned, struct path *, int *empty);
 
