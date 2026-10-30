@@ -302,6 +302,324 @@ replace_once(
     "fsnotify_add_mark legacy signature",
 )
 
+
+# Linux 3.18 directory callbacks use the legacy void * callback ABI. Resolve
+# each emitted inode against the directory superblock and hide SUS_PATH inodes.
+readdir = ROOT / "fs/readdir.c"
+replace_once(
+    readdir,
+    "#include <linux/unistd.h>\n",
+    """#include <linux/unistd.h>
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+#include <linux/susfs_def.h>
+extern int susfs_get_data_path(struct path *path);
+extern bool susfs_is_inode_sus_path(struct inode *inode);
+#endif
+""",
+    "SUSFS readdir declarations",
+)
+replace_once(
+    readdir,
+    "static bool hide_name(const char *name, int namlen)\n",
+    """#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+static inline struct super_block *
+susfs_readdir_get_sb(struct file *file, struct path *data_path, int *path_err)
+{
+    struct super_block *sb = file->f_inode->i_sb;
+
+    *path_err = -EINVAL;
+    if (sb->s_magic == FUSE_SUPER_MAGIC) {
+        *path_err = susfs_get_data_path(data_path);
+        if (!*path_err && data_path->dentry && data_path->dentry->d_inode)
+            return data_path->dentry->d_inode->i_sb;
+        if (!*path_err)
+            *path_err = -ENOENT;
+    }
+    return sb;
+}
+
+static inline bool susfs_is_hidden_dirent(struct super_block *sb, u64 ino)
+{
+    struct inode *inode;
+    bool hidden;
+
+    if (!sb)
+        return false;
+    inode = ilookup(sb, (unsigned long)ino);
+    if (!inode)
+        return false;
+    hidden = susfs_is_inode_sus_path(inode);
+    iput(inode);
+    return hidden;
+}
+#endif
+
+static bool hide_name(const char *name, int namlen)
+""",
+    "SUSFS readdir helpers",
+)
+replace_once(
+    readdir,
+    "struct readdir_callback {\n\tstruct dir_context ctx;\n\tstruct old_linux_dirent __user * dirent;\n\tint result;\n};",
+    """struct readdir_callback {
+\tstruct dir_context ctx;
+\tstruct old_linux_dirent __user * dirent;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tstruct super_block *sb;
+#endif
+\tint result;
+};""",
+    "old_readdir callback superblock",
+)
+replace_once(
+    readdir,
+    "struct getdents_callback {\n\tstruct dir_context ctx;\n\tstruct linux_dirent __user * current_dir;\n\tstruct linux_dirent __user * previous;\n\tint count;\n\tint error;\n};",
+    """struct getdents_callback {
+\tstruct dir_context ctx;
+\tstruct linux_dirent __user * current_dir;
+\tstruct linux_dirent __user * previous;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tstruct super_block *sb;
+#endif
+\tint count;
+\tint error;
+};""",
+    "getdents callback superblock",
+)
+replace_once(
+    readdir,
+    "struct getdents_callback64 {\n\tstruct dir_context ctx;\n\tstruct linux_dirent64 __user * current_dir;\n\tstruct linux_dirent64 __user * previous;\n\tint count;\n\tint error;\n};",
+    """struct getdents_callback64 {
+\tstruct dir_context ctx;
+\tstruct linux_dirent64 __user * current_dir;
+\tstruct linux_dirent64 __user * previous;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tstruct super_block *sb;
+#endif
+\tint count;
+\tint error;
+};""",
+    "getdents64 callback superblock",
+)
+
+# Add inode lookup to the legacy filldir callbacks. The inode reference is
+# released on both paths before returning to the filesystem iterator.
+replace_once(
+    readdir,
+    "\tunsigned long d_ino;\n\n\tif (buf->result)",
+    "\tunsigned long d_ino;\n\n\tif (buf->result)",
+    "old_readdir overflow anchor",
+)
+replace_once(
+    readdir,
+    "\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {\n\t\tbuf->result = -EOVERFLOW;\n\t\treturn -EOVERFLOW;\n\t}\n\tif (hide_name(name, namlen) && buf->ctx.romnt)",
+    """\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {
+\t\tbuf->result = -EOVERFLOW;
+\t\treturn -EOVERFLOW;
+\t}
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tif (susfs_is_hidden_dirent(buf->sb, ino))
+\t\treturn 0;
+#endif
+\tif (hide_name(name, namlen) && buf->ctx.romnt)""",
+    "old_readdir SUS_PATH filtering",
+)
+replace_once(
+    readdir,
+    "\t\tif (!f.file)\n\t\t\treturn -EBADF;",
+    "\t\tif (!f.file)\n\t\t\treturn -EBADF;",
+    "old_readdir descriptor anchor",
+)
+replace_once(
+    readdir,
+    """\tstruct readdir_callback buf = {
+\t\t.ctx.actor = fillonedir,
+\t\t.dirent = dirent
+\t};
+
+\tif (!f.file)
+\t\treturn -EBADF;
+
+\terror = iterate_dir(f.file, &buf.ctx);""",
+    """\tstruct readdir_callback buf = {
+\t\t.ctx.actor = fillonedir,
+\t\t.dirent = dirent
+\t};
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tint path_err = -EINVAL;
+\tstruct path data_path;
+#endif
+
+\tif (!f.file)
+\t\treturn -EBADF;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
+#endif
+\terror = iterate_dir(f.file, &buf.ctx);""",
+    "old_readdir superblock selection",
+)
+replace_once(
+    readdir,
+    """\tfdput(f);
+\treturn error;
+}
+
+#endif /* __ARCH_WANT_OLD_READDIR */""",
+    """\tfdput(f);
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tif (!path_err)
+\t\tpath_put(&data_path);
+#endif
+\treturn error;
+}
+
+#endif /* __ARCH_WANT_OLD_READDIR */""",
+    "old_readdir FUSE data path release",
+)
+
+replace_once(
+    readdir,
+    "\tunsigned long d_ino;\n\tint reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,",
+    "\tunsigned long d_ino;\n\tint reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,",
+    "getdents filldir declaration",
+)
+replace_once(
+    readdir,
+    """\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {
+\t\tbuf->error = -EOVERFLOW;
+\t\treturn -EOVERFLOW;
+\t}
+\tif (hide_name(name, namlen) && buf->ctx.romnt)""",
+    """\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {
+\t\tbuf->error = -EOVERFLOW;
+\t\treturn -EOVERFLOW;
+\t}
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tif (susfs_is_hidden_dirent(buf->sb, ino))
+\t\treturn 0;
+#endif
+\tif (hide_name(name, namlen) && buf->ctx.romnt)""",
+    "getdents SUS_PATH filtering",
+)
+replace_once(
+    readdir,
+    """\t};
+\tint error;
+
+\tif (!access_ok(VERIFY_WRITE, dirent, count))
+\t\treturn -EFAULT;
+
+\tf = fdget(fd);
+\tif (!f.file)
+\t\treturn -EBADF;
+
+\terror = iterate_dir(f.file, &buf.ctx);""",
+    """\t};
+\tint error;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tint path_err = -EINVAL;
+\tstruct path data_path;
+#endif
+
+\tif (!access_ok(VERIFY_WRITE, dirent, count))
+\t\treturn -EFAULT;
+
+\tf = fdget(fd);
+\tif (!f.file)
+\t\treturn -EBADF;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
+#endif
+\terror = iterate_dir(f.file, &buf.ctx);""",
+    "getdents superblock selection",
+)
+replace_once(
+    readdir,
+    """\tfdput(f);
+\treturn error;
+}
+
+struct getdents_callback64""",
+    """\tfdput(f);
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tif (!path_err)
+\t\tpath_put(&data_path);
+#endif
+\treturn error;
+}
+
+struct getdents_callback64""",
+    "getdents FUSE data path release",
+)
+replace_once(
+    readdir,
+    """\tif (reclen > buf->count)
+\t\treturn -EINVAL;
+\tif (hide_name(name, namlen) && buf->ctx.romnt)""",
+    """\tif (reclen > buf->count)
+\t\treturn -EINVAL;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tif (susfs_is_hidden_dirent(buf->sb, ino))
+\t\treturn 0;
+#endif
+\tif (hide_name(name, namlen) && buf->ctx.romnt)""",
+    "getdents64 SUS_PATH filtering",
+)
+replace_once(
+    readdir,
+    """\t};
+\tint error;
+
+\tif (!access_ok(VERIFY_WRITE, dirent, count))
+\t\treturn -EFAULT;
+
+\tf = fdget(fd);
+\tif (!f.file)
+\t\treturn -EBADF;
+
+\terror = iterate_dir(f.file, &buf.ctx);""",
+    """\t};
+\tint error;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tint path_err = -EINVAL;
+\tstruct path data_path;
+#endif
+
+\tif (!access_ok(VERIFY_WRITE, dirent, count))
+\t\treturn -EFAULT;
+
+\tf = fdget(fd);
+\tif (!f.file)
+\t\treturn -EBADF;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
+#endif
+\terror = iterate_dir(f.file, &buf.ctx);""",
+    "getdents64 superblock selection",
+)
+replace_once(
+    readdir,
+    """\tfdput(f);
+\treturn error;
+}""",
+    """\tfdput(f);
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+\tif (!path_err)
+\t\tpath_put(&data_path);
+#endif
+\treturn error;
+}""",
+    "getdents64 FUSE data path release",
+)
+
+if "susfs_is_hidden_dirent(buf->sb, ino)" not in read(readdir):
+    raise SystemExit("SUSFS readdir inode filter was not staged")
+if "susfs_readdir_get_sb(f.file, &data_path, &path_err)" not in read(readdir):
+    raise SystemExit("SUSFS FUSE readdir superblock resolver was not staged")
+
 # The SUSFS object is linked only when the BakaSU feature is explicitly enabled.
 makefile = ROOT / "fs/Makefile"
 make_text = read(makefile)
