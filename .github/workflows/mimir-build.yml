@@ -89,6 +89,9 @@ jobs:
           git -C KernelSU diff --check
           git -C KernelSU diff --stat
 
+      - name: Stage SUSFS v2.2.0 core with Linux 3.18 shims
+        run: python3 scripts/prepare-susfs-318.py
+
       - name: Notify Build Started
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
