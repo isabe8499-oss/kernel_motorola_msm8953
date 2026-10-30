@@ -75,7 +75,11 @@ hook_checks = {
         "susfs_open_redirect_spoof_show_map_vma",
         "SUSFS_IS_INODE_SUS_MAP",
     ),
-    "fs/proc/base.c": ("SUSFS_IS_INODE_SUS_MAP",),
+    "fs/proc/base.c": (
+        "SUSFS_IS_INODE_SUS_MAP",
+        "susfs_open_redirect_spoof_do_proc_readlink",
+    ),
+    "fs/statfs.c": ("susfs_open_redirect_spoof_vfs_statfs",),
     "mm/memory.c": ("SUSFS_IS_INODE_SUS_MAP",),
     "drivers/kernelsu": ("susfs_init",),
 }
