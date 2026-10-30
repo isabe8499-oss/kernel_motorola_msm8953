@@ -72,6 +72,7 @@ hook_checks = {
     "fs/stat.c": ("susfs_sus_kstat_spoof_generic_fillattr",),
     "fs/proc/task_mmu.c": (
         "susfs_sus_kstat_spoof_show_map_vma",
+        "susfs_open_redirect_spoof_show_map_vma",
         "SUSFS_IS_INODE_SUS_MAP",
     ),
     "fs/proc/base.c": ("SUSFS_IS_INODE_SUS_MAP",),
