@@ -25,6 +25,10 @@ on:
           - 'y'
           - 'n'
 
+concurrency:
+  group: mimir-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

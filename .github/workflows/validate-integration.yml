@@ -4,7 +4,22 @@ on:
   push:
     branches:
       - integration/bakasu-35253-susfs22-nomount
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/**'
+      - 'arch/arm64/configs/deen_defconfig'
+      - 'drivers/**'
+      - 'fs/**'
+      - 'include/linux/**'
+      - '.gitmodules'
+      - 'KernelSU'
+      - 'SUSFS'
+      - 'NoMount'
   workflow_dispatch:
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -26,8 +41,8 @@ jobs:
           test "$(git -C SUSFS rev-parse HEAD)" = "4003ecf2d01c6d13fa8edf6c4f2607365738dc3d"
           test "$(git -C KernelSU rev-list --count HEAD)" = "4553"
 
-      - name: Validate Python overlay syntax
-        run: python3 -m py_compile scripts/apply-bakasu-318-compat.py
+      - name: Validate Python integration scripts
+        run: python3 -m py_compile scripts/apply-bakasu-318-compat.py scripts/prepare-susfs-318.py scripts/stage-nomount-318.py scripts/check-mimir-integration.py
 
       - name: Apply compatibility overlay
         run: |
@@ -42,6 +57,14 @@ jobs:
           grep -q 'KSU_COMPAT_LEGACY_USERPATH' KernelSU/kernel/feature/sucompat.h
           test "$(grep -c '!defined(KSU_COMPAT_LEGACY_USERPATH)' KernelSU/kernel/feature/sucompat.c)" -eq 2
           grep -q 'susfs_compat.mk' KernelSU/kernel/Kbuild
+
+      - name: Stage pinned NoMount source without enabling it
+        run: |
+          python3 scripts/stage-nomount-318.py
+          test -f fs/nomount/nomount.c
+          test -f fs/nomount/nomount.h
+          grep -q 'default n' fs/nomount/Kconfig
+          ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
 
       - name: Confirm kernel features remain gated
         shell: bash
