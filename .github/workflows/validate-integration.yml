@@ -72,6 +72,11 @@ jobs:
           test -f fs/nomount/nomount.c
           test -f fs/nomount/nomount.h
           grep -q 'default n' fs/nomount/Kconfig
+          grep -q '#define NM_LINUX_318_PORT 1' fs/nomount/nomount.h
+          grep -q '.follow_link = nm_follow_link' fs/nomount/nomount.c
+          grep -q '.getxattr = nm_getxattr' fs/nomount/nomount.c
+          grep -q 'KERNEL_VERSION(4, 7, 0)' fs/nomount/nomount.c
+          grep -q 'KERNEL_VERSION(4, 7, 0)' fs/nomount/nomount.h
           ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
 
       - name: Compile NoMount against the Linux 3.18 ARM64 headers
