@@ -83,6 +83,12 @@ jobs:
           test -f SUSFS/kernel_patches/include/linux/susfs_def.h
           test -f SUSFS/50_add_susfs_in_gki-android12-5.10.patch
 
+      - name: Apply BakaSU Linux 3.18 compatibility overlay
+        run: |
+          python3 scripts/apply-bakasu-318-compat.py
+          git -C KernelSU diff --check
+          git -C KernelSU diff --stat
+
       - name: Notify Build Started
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
