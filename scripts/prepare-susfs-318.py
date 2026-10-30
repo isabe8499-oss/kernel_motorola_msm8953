@@ -225,6 +225,50 @@ void susfs_static_branch_disable(struct static_key *key)
 """
 replace_once(susfs_c, key_anchor, key_compat + key_anchor, "SUSFS static-key idempotent wrappers")
 
+# SUSFS v2.2.0 has a bitmask typo: (1 < 8) evaluates to bit 0, not bit 8.
+replace_once(
+    ROOT / "include/linux/susfs.h",
+    "#define KSTAT_SPOOF_CTIME_TV_SEC (1 < 8)",
+    "#define KSTAT_SPOOF_CTIME_TV_SEC (1 << 8)",
+    "SUSFS kstat ctime flag bit",
+)
+
+# The upstream show_map helper allocates spoofed_name but takes char * by
+# value, so the caller can never receive that allocation. Make it an explicit
+# output parameter before wiring the proc maps consumer.
+replace_once(
+    susfs_c,
+    "int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char *spoofed_name) {",
+    "int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char **spoofed_name) {",
+    "SUSFS open redirect maps output pointer",
+)
+replace_once(
+    susfs_c,
+    """\tif (spoofed_name) {
+\t\tSUSFS_LOGE("spoofed_name must be NULL first!\\n");
+\t\treturn -EINVAL;
+\t}""",
+    """\tif (!spoofed_name || *spoofed_name) {
+\t\tSUSFS_LOGE("spoofed_name output must point to NULL!\\n");
+\t\treturn -EINVAL;
+\t}""",
+    "SUSFS open redirect maps output validation",
+)
+replace_once(
+    susfs_c,
+    """\t\t\tspoofed_name = kzalloc(SUSFS_MAX_LEN_PATHNAME, GFP_KERNEL);
+\t\t\tif (!spoofed_name) {""",
+    """\t\t\t*spoofed_name = kzalloc(SUSFS_MAX_LEN_PATHNAME, GFP_KERNEL);
+\t\t\tif (!*spoofed_name) {""",
+    "SUSFS open redirect maps output allocation",
+)
+replace_once(
+    susfs_c,
+    "strscpy(spoofed_name, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);",
+    "strscpy(*spoofed_name, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);",
+    "SUSFS open redirect maps output copy",
+)
+
 # 3.18 fsnotify uses handle_event(group, inode, marks, mask, data, type,
 # file_name, cookie), fsnotify_init_mark(mark, free_mark), and fsnotify_add_mark.
 fsnotify_old = """static const struct fsnotify_ops fsnotify_ops = {
@@ -277,6 +321,10 @@ if '#define SUSFS_VERSION "v2.2.0"' not in header:
     raise SystemExit("Staged SUSFS header is not v2.2.0")
 if ".handle_event = susfs_handle_sdcard_event_compat" not in read(susfs_c):
     raise SystemExit("SUSFS fsnotify compatibility callback missing")
+if "char **spoofed_name" not in read(susfs_c):
+    raise SystemExit("SUSFS open redirect maps output parameter was not repaired")
+if "#define KSTAT_SPOOF_CTIME_TV_SEC (1 << 8)" not in read(ROOT / "include/linux/susfs.h"):
+    raise SystemExit("SUSFS kstat ctime flag fix missing")
 if "susfs_is_current_proc_no_su" not in read(def_path):
     raise SystemExit("BakaSU UAPI 6 no-su helper missing")
 if object_line not in read(makefile):
