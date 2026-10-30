@@ -12,6 +12,13 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = ROOT / "NoMount/kernel/src"
 TARGET = ROOT / "fs/nomount"
+
+def read(path):
+    return path.read_text()
+
+def write(path, content):
+    path.write_text(content)
+
 FILES = ("nomount.c", "nomount.h", "Kconfig", "Makefile")
 EXPECTED = "bf1847f98fed382369c43bfd652cd93774b9b8e3"
 
