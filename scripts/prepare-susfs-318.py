@@ -244,23 +244,18 @@ replace_once(
 )
 replace_once(
     susfs_c,
-    """\tif (spoofed_name) {
-\t\tSUSFS_LOGE("spoofed_name must be NULL first!\\n");
-\t\treturn -EINVAL;
-\t}""",
-    """\tif (!spoofed_name || *spoofed_name) {
-\t\tSUSFS_LOGE("spoofed_name output must point to NULL!\\n");
-\t\treturn -EINVAL;
-\t}""",
+replace_once(
+    susfs_c,
+    "\tif (spoofed_name) {\n\t\tSUSFS_LOGE(\"spoofed_name must be NULL first!\\n\");\n\t\treturn -EINVAL;\n\t}",
+    "\tif (!spoofed_name || *spoofed_name) {\n\t\tSUSFS_LOGE(\"spoofed_name output must point to NULL!\\n\");\n\t\treturn -EINVAL;\n\t}",
     "SUSFS open redirect maps output validation",
 )
 replace_once(
     susfs_c,
-    """\t\t\tspoofed_name = kzalloc(SUSFS_MAX_LEN_PATHNAME, GFP_KERNEL);
-\t\t\tif (!spoofed_name) {""",
-    """\t\t\t*spoofed_name = kzalloc(SUSFS_MAX_LEN_PATHNAME, GFP_KERNEL);
-\t\t\tif (!*spoofed_name) {""",
+    "\t\t\tspoofed_name = kzalloc(SUSFS_MAX_LEN_PATHNAME, GFP_KERNEL);\n\t\t\tif (!spoofed_name) {",
+    "\t\t\t*spoofed_name = kzalloc(SUSFS_MAX_LEN_PATHNAME, GFP_KERNEL);\n\t\t\tif (!*spoofed_name) {",
     "SUSFS open redirect maps output allocation",
+)
 )
 replace_once(
     susfs_c,
