@@ -6,6 +6,7 @@ feature hooks are complete. It makes the exact core source available for the
 next porting/build stage.
 """
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -196,7 +197,6 @@ def patch_no_su_helpers(path):
         raise SystemExit("BakaSU no-su helper insertion did not produce exactly one of each helper")
     write(path, content)
 
-import re
 patch_no_su_helpers(def_path)
 
 # Linux 3.18 static_key_slow_inc/dec are reference-counted. SUSFS 2.2 calls
