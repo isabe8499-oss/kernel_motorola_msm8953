@@ -70,6 +70,18 @@ def wrap_region(path, start, end, opening, closing, label):
 nomount_h = TARGET / "nomount.h"
 replace_once(
     nomount_h,
+    "static DEFINE_MUTEX(nm_mutex);",
+    """static struct mutex nm_mutex = {
+    .count = ATOMIC_INIT(1),
+    .wait_lock = { .rlock = __RAW_SPIN_LOCK_INITIALIZER(nm_mutex.wait_lock) },
+    .wait_list = LIST_HEAD_INIT(nm_mutex.wait_list)
+    __DEBUG_MUTEX_INITIALIZER(nm_mutex)
+    __DEP_MAP_MUTEX_INITIALIZER(nm_mutex)
+};""",
+    "NoMount GCC 4.9 constant mutex initializer",
+)
+replace_once(
+    nomount_h,
     '#define NOMOUNT_BASE_VERSION "22"',
     '#define NOMOUNT_BASE_VERSION "22"\n#define NM_LINUX_318_PORT 1\n\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)\n#define in_compat_syscall() is_compat_task()\n#endif',
     "NoMount 3.18 port marker and compat syscall helper",
