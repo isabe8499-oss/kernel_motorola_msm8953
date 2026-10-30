@@ -1,0 +1,51 @@
+name: Validate Kernel Integration Overlay
+
+on:
+  push:
+    branches:
+      - integration/bakasu-35253-susfs22-nomount
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-bakasu-overlay:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pinned source tree
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify pinned submodules
+        shell: bash
+        run: |
+          test "$(git -C KernelSU rev-parse HEAD)" = "5785bdb8091304322f597f67d50e0b79f9815cb2"
+          test "$(git -C SUSFS rev-parse HEAD)" = "4003ecf2d01c6d13fa8edf6c4f2607365738dc3d"
+          test "$(git -C KernelSU rev-list --count HEAD)" = "4553"
+
+      - name: Validate Python overlay syntax
+        run: python3 -m py_compile scripts/apply-bakasu-318-compat.py
+
+      - name: Apply compatibility overlay
+        run: |
+          python3 scripts/apply-bakasu-318-compat.py
+          git -C KernelSU diff --check
+
+      - name: Assert Manual Hook and SUSFS coexistence
+        shell: bash
+        run: |
+          grep -q 'bool "Enable SUSFS support"' KernelSU/kernel/Kconfig
+          grep -q 'susfs_init();' KernelSU/kernel/core/init.c
+          grep -q 'KSU_COMPAT_LEGACY_USERPATH' KernelSU/kernel/feature/sucompat.h
+          test "$(grep -c '!defined(KSU_COMPAT_LEGACY_USERPATH)' KernelSU/kernel/feature/sucompat.c)" -eq 2
+          grep -q 'susfs_compat.mk' KernelSU/kernel/Kbuild
+
+      - name: Confirm kernel features remain gated
+        shell: bash
+        run: |
+          ! grep -q '^CONFIG_KSU=y' arch/arm64/configs/deen_defconfig
+          ! grep -q '^CONFIG_KSU_SUSFS=y' arch/arm64/configs/deen_defconfig
+          echo "Overlay validated; full feature enablement is intentionally gated pending SUSFS/NoMount port."
