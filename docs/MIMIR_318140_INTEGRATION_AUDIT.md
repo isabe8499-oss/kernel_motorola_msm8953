@@ -22,12 +22,20 @@
 - Upstream: https://github.com/maxsteeel/nomount
 - Upstream documentation says kernels older than 5.10 need direct source integration or a device-specific LKM; the prebuilt LKM should not be assumed compatible.
 - Upstream manual integration uses fs/Kconfig, fs/Makefile, and fs/nomount/{Kconfig,Makefile,nomount.c,nomount.h}.
-- Upstream setup script is at kernel/setup.sh. It must be reviewed and tested against this 3.18 tree before execution; do not pipe an unreviewed remote script into a privileged shell.
+- The current upstream source uses `rcu_guard()` in its RCU read-side path. This is not part of the 3.18-era RCU API, so a compatibility adaptation is required; it must preserve all early-return unlock paths and RCU/refcount rules.
+- The upstream Makefile also probes for newer xattr callback signatures. The old 3.18 xattr/VFS interfaces must be checked and adapted rather than assumed compatible.
+- Upstream setup script is at kernel/setup.sh. It creates a symlink and edits fs/Kconfig and fs/Makefile; it must be reviewed and tested against this 3.18 tree before execution. Do not pipe an unreviewed remote script into a privileged shell.
+
+## BakaSU integration findings
+- Upstream: https://github.com/Baka-SU/BakaSU
+- The setup script clones the moving main branch by default. That is not sufficiently reproducible for this build.
+- Pin a verified commit/tag after confirming it implements the manager protocol expected by the supplied 35253/6 APK. Do not infer compatibility from APK version text alone.
+- Audit its manual-hook and SELinux compatibility checks against this kernel's 3.18.140 source before enabling CONFIG_KSU.
 
 ## Required work before a flashable build
 1. Recover or reintroduce the complete SUSFS 2.2.0 source/patch set and validate every required hook against this exact 3.18.140 tree.
-2. Select the BakaSU kernel-side revision that corresponds to manager protocol/build 35253/6; do not infer compatibility from the APK version string alone.
-3. Port NoMount's VFS integration to this kernel's path-walk and directory iteration APIs; resolve compile errors and verify locking/refcount semantics.
+2. Select and pin the BakaSU kernel-side revision that corresponds to manager protocol/build 35253/6.
+3. Port NoMount's VFS integration to this kernel's path-walk, RCU, xattr and directory iteration APIs; resolve compile errors and verify locking/refcount semantics.
 4. Update deen_defconfig only after Kconfig symbols and source files are present.
 5. Replace or adapt the current delegated build workflow so it builds this repository/branch deterministically, then run config checks, full ARM64 build, package checks, and preserve the prior boot image for recovery.
 
