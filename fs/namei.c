@@ -2089,7 +2089,7 @@ out:
 	return err;
 }
 
-static int filename_lookup(int dfd, struct filename *name,
+int filename_lookup(int dfd, struct filename *name,
 				unsigned int flags, struct nameidata *nd)
 {
 	int retval = path_lookupat(dfd, name->name, flags | LOOKUP_RCU, nd);
