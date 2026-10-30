@@ -110,7 +110,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -q '^CONFIG_KSU=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU=y
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y arch/arm64/configs/deen_defconfig
           grep -q '^CONFIG_KSU_SUSFS=y arch/arm64/configs/deen_defconfig
           grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y arch/arm64/configs/deen_defconfig
@@ -123,4 +123,108 @@ jobs:
           grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
           grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
           grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y
+          grep -q '^CONFIG_KSU_SUSFS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS=y
+          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_PATH=y
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          grep -q '^CONFIG_NOMOUNT=y arch/arm64/configs/deen_defconfig
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_NOMOUNT=y
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ arch/arm64/configs/deen_defconfig
           echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
