@@ -68,7 +68,7 @@ if SUSFS_H.is_file():
 
 # These feature hooks must exist in the kernel tree, not merely in Kconfig.
 hook_checks = {
-    "fs/open.c": ("susfs_open_redirect_spoof_do_sys_openat",),
+    "fs/namei.c": ("susfs_is_inode_sus_path", "susfs_open_redirect_spoof_do_sys_openat"),
     "fs/stat.c": ("susfs_sus_kstat_spoof_generic_fillattr",),
     "mm": ("susfs_sus_kstat_spoof_show_map_vma",),
     "drivers/kernelsu": ("susfs_init",),
@@ -101,8 +101,10 @@ for path in nomount_candidates:
 nomount_text = ""
 if nomount_candidates[0].is_file():
     nomount_text = nomount_candidates[0].read_text(errors="replace")
-if not re.search(r"(?:NM_PROTOCOL_VERSION|NOMOUNT_PROTOCOL_VERSION|NM_PROTO_VERSION)\s+(?:22|0x16)", nomount_text):
-    missing.append("NoMount source does not declare/identify protocol v22")
+if '#define NOMOUNT_BASE_VERSION "22"' not in nomount_text:
+    missing.append("NoMount source is not the pinned v2.2.0/protocol-22 implementation")
+if "#define NM_LINUX_318_PORT 1" not in nomount_text:
+    missing.append("NoMount Linux 3.18 compatibility port marker is missing")
 
 if missing:
     print("MIMIR INTEGRATION GATE: BLOCKED — refusing to produce a flashable ZIP.")
