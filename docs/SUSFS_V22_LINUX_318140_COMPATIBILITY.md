@@ -52,15 +52,23 @@ A enumeração acima indica os pontos de integração necessários; não afirma 
 
 O ZIP antigo contém no IKCONFIG `CONFIG_KSU_SUSFS=y` e os símbolos de path, mount, kstat, spoof uname, spoof cmdline, open redirect e sus map. A imagem contém nomes de funções correspondentes. Isso valida o objetivo de reconstrução, mas não recupera os patches privados que adicionaram os hooks ao kernel 3.18.
 
-## Estado da porta
+## Estado da porta — branch de integração
 
-- [x] Revisão de fonte fixada e versão 2.2.0 confirmada.
-- [x] Inventário das APIs 3.18 que já existem e das que faltam.
-- [x] Comparação inicial de bitmaps de mapping e thread flags.
-- [ ] Camada de compatibilidade de static keys e nameidata.
-- [ ] Portar/compilar `fs/susfs.c` e header.
-- [ ] Ligar os pontos de chamada de cada recurso ao VFS/proc/mm 3.18.
-- [ ] Separar `CONFIG_KSU_SUSFS` do seletor Manual Hook no overlay BakaSU.
-- [ ] Build ARM64, runtime tests, stress RCU/SRCU e testes no dispositivo.
+- [x] Revisão fixada em SUSFS v2.2.0 (`4003ecf2d01c6d13fa8edf6c4f2607365738dc3d`).
+- [x] Submódulo e verificação de SHA no workflow.
+- [x] Script `scripts/prepare-susfs-318.py` ligado ao CI para copiar o core e aplicar shims 3.18 para bits, static keys, `TIF_PROC_NO_SU`, `fsnotify_ops`, `fsnotify_init_mark` e `fsnotify_add_mark`.
+- [x] `fs/Makefile` contém o objeto condicional `obj-$(CONFIG_KSU_SUSFS) += susfs.o`.
+- [x] `struct nameidata.state` adicionado sob `CONFIG_KSU_SUSFS` e inicializado em `path_init()`.
+- [x] `filename_lookup()` exportado com a assinatura 3.18 e declarado em `fs/internal.h`.
+- [x] Call sites SUS_PATH adicionados em `fs/namei.c` (`lookup_fast`, `lookup_dcache`, `__lookup_hash`, `walk_component`, `link_path_walk`, `lookup_last`, `lookup_open`, `do_last`).
+- [x] Open redirect adicionado em `do_filp_open()` e `generic_readlink()` sob `CONFIG_KSU_SUSFS_OPEN_REDIRECT`.
+- [x] Overlay BakaSU separa `KSU_SUSFS` como feature e preserva Manual Hook como método.
+- [ ] Execução do workflow confirma o staging e compilação do core e dos call sites.
+- [ ] Portar readdir, mount/mountinfo, kstat/statfs, procfs/cmdline/kallsyms e mm/SUS_MAP.
+- [ ] Corrigir o bit `KSTAT_SPOOF_CTIME_TV_SEC` no kernel e no userspace/CLI em conjunto; não aplicar unilateralmente.
+- [ ] Ativar `CONFIG_KSU_SUSFS` e os recursos do IKCONFIG antigo somente depois dos itens acima.
+- [ ] Build ARM64, testes de runtime/stress e validação no Motorola One Deen.
 
-**Não habilitar `CONFIG_KSU_SUSFS_*` no defconfig antes de concluir esses itens.** O fonte ainda não foi integrado/compilado nesta branch.
+O IKCONFIG antigo tinha `CONFIG_JUMP_LABEL` desativado. O Linux 3.18 mantém fallback atômico de static keys; a porta preserva esse estado e não força `CONFIG_JUMP_LABEL=y`.
+
+**Não declarar integração funcional, compilação bem-sucedida ou boot até a execução do workflow e os testes de dispositivo.**
