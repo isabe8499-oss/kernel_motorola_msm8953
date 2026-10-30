@@ -390,7 +390,7 @@ orig_flow:
 	if (spoofed_redirected_name) {
 		seq_pad(m, ' ');
 		seq_puts(m, spoofed_redirected_name);
-		seq_putc(m, '\\n');
+		seq_putc(m, '\n');
 		kfree(spoofed_redirected_name);
 		return;
 	}
