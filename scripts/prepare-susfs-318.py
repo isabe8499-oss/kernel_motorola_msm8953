@@ -568,39 +568,6 @@ replace_once(
 )
 replace_once(
     readdir,
-    """\t};
-\tint error;
-
-\tif (!access_ok(VERIFY_WRITE, dirent, count))
-\t\treturn -EFAULT;
-
-\tf = fdget(fd);
-\tif (!f.file)
-\t\treturn -EBADF;
-
-\terror = iterate_dir(f.file, &buf.ctx);""",
-    """\t};
-\tint error;
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-\tint path_err = -EINVAL;
-\tstruct path data_path;
-#endif
-
-\tif (!access_ok(VERIFY_WRITE, dirent, count))
-\t\treturn -EFAULT;
-
-\tf = fdget(fd);
-\tif (!f.file)
-\t\treturn -EBADF;
-
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-\tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
-#endif
-\terror = iterate_dir(f.file, &buf.ctx);""",
-    "getdents64 superblock selection", 2,
-)
-replace_once(
-    readdir,
     """\t\telse
 \t\t\terror = count - buf.count;
 \t}
