@@ -5,6 +5,10 @@
 #include <linux/mount.h>
 #include <linux/namei.h>
 #include <linux/statfs.h>
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+#include <linux/susfs_def.h>
+extern int susfs_open_redirect_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf);
+#endif
 #include <linux/security.h>
 #include <linux/uaccess.h>
 #include "internal.h"
@@ -68,8 +72,14 @@ int vfs_statfs(struct path *path, struct kstatfs *buf)
 	int error;
 
 	error = statfs_by_dentry(path->dentry, buf);
-	if (!error)
+	if (!error) {
 		buf->f_flags = calculate_f_flags(path->mnt);
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+		if (path->dentry->d_inode &&
+		    SUSFS_IS_INODE_OPEN_REDIRECT(path->dentry->d_inode))
+			susfs_open_redirect_spoof_vfs_statfs(path->dentry->d_inode, buf);
+#endif
+	}
 	return error;
 }
 EXPORT_SYMBOL(vfs_statfs);
