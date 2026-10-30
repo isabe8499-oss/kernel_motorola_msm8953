@@ -75,6 +75,7 @@ hook_checks = {
         "SUSFS_IS_INODE_SUS_MAP",
     ),
     "fs/proc/base.c": ("SUSFS_IS_INODE_SUS_MAP",),
+    "mm/memory.c": ("SUSFS_IS_INODE_SUS_MAP",),
     "drivers/kernelsu": ("susfs_init",),
 }
 for rel, markers in hook_checks.items():
