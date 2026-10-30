@@ -57,7 +57,7 @@ No Kconfig upstream fixado, `KSU_MANUAL_HOOK` e `KSU_SUSFS` são opções mutuam
 
 O ZIP antigo é evidência de uma customização que permitia simultaneamente `CONFIG_KSU_MANUAL_HOOK=y` e `CONFIG_KSU_SUSFS=y`; o IKCONFIG e as strings da imagem confirmam isso, mas não recuperam os patches locais.
 
-A adaptação planejada é separar o seletor `KSU_SUSFS_INLINE_HOOK` do sinalizador de funcionalidade `KSU_SUSFS`, manter Manual Hook como método de hook e chamar `susfs_init()` de forma independente. As condicionais de `sucompat`, `preinit` e `ksud_integration` que hoje confundem modo de hook com feature precisam ser divididas com cuidado.
+O overlay `scripts/apply-bakasu-318-compat.py`, executado pelo workflow, move `KSU_SUSFS` para fora da `choice` como feature independente, mantém `KSU_MANUAL_HOOK` como método selecionado e chama `susfs_init()` dentro do caminho Manual Hook. Ele também força a ABI de ponteiro de usuário legado em `faccessat/stat`, compatível com os syscalls do 3.18, e prioriza Manual Hook no dispatcher initrc/input. A opção SUSFS continua desligada no `deen_defconfig` até o core SUSFS e os hooks do kernel estarem integrados. O `sucompat.h` do BakaSU passa a exigir `susfs_is_current_proc_no_su()` quando a feature for ligada; a fonte SUSFS 2.2.0 não fornece esse helper, então será adicionado um shim local `TIF_PROC_NO_SU` sem alterar a versão upstream.
 
 ## Estado e critérios de aceitação
 
@@ -70,7 +70,7 @@ A adaptação planejada é separar o seletor `KSU_SUSFS_INLINE_HOOK` do sinaliza
 - [ ] Compilar ARM64 e resolver erros/warnings.
 - [ ] Confirmar `KSU_IOCTL_GET_INFO`: kernel UAPI 6 e manager UAPI 6.
 - [ ] Confirmar `isFullFeatured() == true`, root grant e comunicação com daemon.
-- [ ] Integrar SUSFS 2.2.0 sem trocar Manual Hook pelo Inline Hook.
+- [ ] Integrar o core SUSFS 2.2.0 e o shim `susfs_is_current_proc_no_su()` mantendo Manual Hook.
 - [ ] Testar no Motorola One Deen e preservar caminho de recuperação.
 
 Este relatório separa o que já está conectado no fonte do que ainda depende de compilação e teste. Não declara build funcional nem ZIP pronto.
