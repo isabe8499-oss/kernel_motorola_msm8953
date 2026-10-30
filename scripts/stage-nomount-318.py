@@ -124,6 +124,101 @@ replace_once(
 
 nomount_c = TARGET / "nomount.c"
 
+
+# Linux 3.18 compatibility for hash, dcache flags, inode list locking and AIO.
+replace_once(
+    nomount_h,
+    "#include <linux/compat.h>\n",
+    """#include <linux/compat.h>
+#include <linux/spinlock.h>
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
+extern spinlock_t inode_sb_list_lock;
+#endif
+
+#ifndef DCACHE_OP_REAL
+#define DCACHE_OP_REAL 0
+#endif
+
+static inline u32 nm_seeded_name_hash(unsigned long seed,
+                                      const unsigned char *name,
+                                      unsigned int len)
+{
+    unsigned long hash = seed;
+
+    while (len--)
+        hash = partial_name_hash(*name++, hash);
+    return end_name_hash(hash);
+}
+""",
+    "NoMount Linux 3.18 hash and VFS compatibility declarations",
+)
+
+replace_once(
+    nomount_h,
+    "n->hash = full_name_hash(dir, n->name, n->len);",
+    """#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
+    n->hash = full_name_hash(n->name, n->len);
+#else
+    n->hash = full_name_hash(dir, n->name, n->len);
+#endif""",
+    "NoMount legacy dcache name hash signature",
+)
+
+replace_once(
+    nomount_h,
+    "    case BPF_FS_MAGIC:",
+    """#ifdef BPF_FS_MAGIC
+    case BPF_FS_MAGIC:
+#endif""",
+    "NoMount optional BPF filesystem magic",
+)
+
+replace_once(
+    nomount_c,
+    "#include <linux/file.h>\n",
+    "#include <linux/file.h>\n#include <linux/aio.h>\n",
+    "NoMount legacy kiocb definition",
+)
+
+for old_hash, new_hash, label in (
+    (
+        "full_name_hash((const void *)(unsigned long)NM_MAGIC_SIG, name, len)",
+        "nm_seeded_name_hash((unsigned long)NM_MAGIC_SIG, (const unsigned char *)name, len)",
+        "NoMount seeded leaf lookup hash",
+    ),
+    (
+        "full_name_hash((const void *)(unsigned long)NM_MAGIC_SIG, name, name_len)",
+        "nm_seeded_name_hash((unsigned long)NM_MAGIC_SIG, (const unsigned char *)name, name_len)",
+        "NoMount seeded child insertion hash",
+    ),
+    (
+        "full_name_hash((const void *)(unsigned long)NM_MAGIC_SIG, path, len)",
+        "nm_seeded_name_hash((unsigned long)NM_MAGIC_SIG, (const unsigned char *)path, len)",
+        "NoMount seeded leaf lookup path hash",
+    ),
+):
+    replace_once(nomount_c, old_hash, new_hash, label)
+
+# filldir_t in 3.18 takes void *; newer dir_context actors take struct dir_context *.
+replace_once(
+    nomount_c,
+    "static NM_ACTOR_RET nm_actor_proxy(struct dir_context *ctx, const char *name, int namelen, loff_t offset, u64 ino, unsigned int d_type)",
+    """#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
+static NM_ACTOR_RET nm_actor_proxy(void *ctx, const char *name, int namelen, loff_t offset, u64 ino, unsigned int d_type)
+#else
+static NM_ACTOR_RET nm_actor_proxy(struct dir_context *ctx, const char *name, int namelen, loff_t offset, u64 ino, unsigned int d_type)
+#endif""",
+    "NoMount legacy filldir actor signature",
+)
+
+# 3.18 has a global lock protecting sb->s_inodes, not s_inode_list_lock on sb.
+source = read(nomount_c)
+lock_count = source.count("s_inode_list_lock")
+if lock_count != 4:
+    raise SystemExit(f"NoMount inode-list lock adapter: expected 4 references, found {lock_count}")
+write(nomount_c, source.replace("s_inode_list_lock", "inode_sb_list_lock"))
+
 # The 3.18 VFS dispatches xattrs through inode_operations. The handler-array
 # proxy API used by the newer NoMount source is retained only on 4.4+.
 wrap_region(
