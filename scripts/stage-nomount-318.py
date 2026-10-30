@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Stage the pinned NoMount v2.2.0 sources; leave the driver disabled.
+"""Stage NoMount v2.2.0 and apply the Linux 3.18 VFS compatibility layer.
 
-The upstream source is not Linux 3.18-compatible yet. This script records the
-exact source snapshot in fs/nomount and wires its Kconfig/Makefile entries,
-but forces default n so an incomplete port is never compiled accidentally.
+The adapter restores the legacy iterate, follow_link and inode xattr callbacks.
+CONFIG_NOMOUNT stays disabled in the device defconfig until the object and full
+kernel build/runtime checks have passed.
 """
 from pathlib import Path
 import shutil
@@ -386,4 +386,4 @@ if entry not in text:
     fs_makefile.write_text(text.rstrip() + "\n\n" + entry + "\n")
 
 print(f"Staged NoMount v2.2.0 ({actual}) under fs/nomount.")
-print("CONFIG_NOMOUNT defaults to n until the Linux 3.18 port is complete.")
+print("Linux 3.18 VFS adapters staged; CONFIG_NOMOUNT remains n pending compile/runtime validation.")
