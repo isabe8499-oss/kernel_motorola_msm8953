@@ -22,7 +22,7 @@ Para o manager anexado ser reconhecido como **full featured**, o driver precisa 
 
 - A revisão `7c383cfeef3a2ac450f2f1273dae74bd50356d31`, associada ao sufixo `7c383cfe` visto no driver antigo, declara `KERNEL_SU_UAPI_VERSION = 5`.
 - A revisão `5785bdb8091304322f597f67d50e0b79f9815cb2` declara UAPI 6 e acrescenta `KSU_IOCTL_LOOKUP_SYMBOLS` e `KSU_GET_INFO_FLAG_PREINIT` em relação à UAPI 5.
-- A fórmula de versão do manager na revisão atual é `30000 + git rev-list --count HEAD + 700`. O código 35253 corresponde a uma contagem de 4553 commits nessa fórmula. A contagem deve ser confirmada no commit exato usado para gerar o APK; não presumir que qualquer ponta de `main` gere o mesmo versionCode.
+- A fórmula de versão do manager na revisão `5785bdb8091304322f597f67d50e0b79f9815cb2` é `30000 + git rev-list --count HEAD + 700`. Confirmei que esse SHA é o HEAD de `main`; a API paginada de commits retorna 45 páginas completas de 100 e uma última página de 53, totalizando 4553 commits. Portanto, `30000 + 4553 + 700 = 35253`. Essa é a revisão fixada que corresponde ao versionCode do APK e declara UAPI 6.
 
 A antiga revisão UAPI 5 pode oferecer compatibilidade parcial por caminhos legados, mas **não atende à condição de full featured do APK UAPI 6**. O teste objetivo é consultar ambos os valores e confirmar que kernel e manager reportam 6.
 
