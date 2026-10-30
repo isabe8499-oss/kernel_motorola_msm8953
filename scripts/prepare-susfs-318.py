@@ -532,7 +532,7 @@ replace_expected(
 \tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
 #endif
 \terror = iterate_dir(f.file, &buf.ctx);""",
-    "getdents/getdents64 shared superblock selection", 2,
+    2,\n    "getdents/getdents64 shared superblock selection",
 )
 replace_once(
     readdir,
@@ -645,4 +645,4 @@ if object_line not in read(makefile):
     raise SystemExit("fs/Makefile does not link susfs.o")
 
 print("SUSFS v2.2.0 core staged with Linux 3.18 static-key/fsnotify shims.")
-print("CONFIG_KSU_SUSFS remains disabled; VFS/proc/mm feature hooks are not yet complete.")
+print("CONFIG_KSU_SUSFS is enabled in deen_defconfig; full compile and runtime validation remain pending.")
