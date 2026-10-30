@@ -80,6 +80,14 @@ jobs:
           test "$COMMIT_COUNT" = "4553"
           test -L drivers/kernelsu
           test "$(readlink drivers/kernelsu)" = "../KernelSU/kernel"
+          test -e NoMount/.git
+          NOMOUNT_ACTUAL="$(git -C NoMount rev-parse HEAD)"
+          NOMOUNT_EXPECTED="bf1847f98fed382369c43bfd652cd93774b9b8e3"
+          echo "NoMount source: $NOMOUNT_ACTUAL"
+          test "$NOMOUNT_ACTUAL" = "$NOMOUNT_EXPECTED"
+          git -C NoMount cat-file -e "$NOMOUNT_EXPECTED^{commit}"
+          test -f NoMount/kernel/src/nomount.c
+          test -f NoMount/kernel/src/nomount.h
 
       - name: Verify pinned SUSFS v2.2.0 source
         run: |
@@ -104,6 +112,9 @@ jobs:
 
       - name: Stage SUSFS v2.2.0 core with Linux 3.18 shims
         run: python3 scripts/prepare-susfs-318.py
+
+      - name: Stage pinned NoMount v2.2.0 source
+        run: python3 scripts/stage-nomount-318.py
 
       - name: Gate complete BakaSU + SUSFS + NoMount integration
         run: python3 scripts/check-mimir-integration.py
@@ -226,6 +237,7 @@ jobs:
           path: |
             build_output.log
             build_log.txt
+            mimir-integration-gate.txt
           if-no-files-found: warn
           retention-days: 7
 
