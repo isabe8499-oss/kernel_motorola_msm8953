@@ -1908,6 +1908,9 @@ static int path_init(int dfd, const char *name, unsigned int flags,
 
 	nd->last_type = LAST_ROOT; /* if there are only slashes... */
 	nd->flags = flags | LOOKUP_JUMPED;
+#ifdef CONFIG_KSU_SUSFS
+	nd->state = 0;
+#endif
 	nd->depth = 0;
 	if (flags & LOOKUP_ROOT) {
 		struct dentry *root = nd->root.dentry;
