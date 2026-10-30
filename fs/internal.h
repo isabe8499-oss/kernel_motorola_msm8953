@@ -14,6 +14,11 @@ struct file_system_type;
 struct linux_binprm;
 struct path;
 struct mount;
+struct nameidata;
+struct filename;
+
+extern int filename_lookup(int dfd, struct filename *name,
+			   unsigned int flags, struct nameidata *nd);
 
 /*
  * block_dev.c
