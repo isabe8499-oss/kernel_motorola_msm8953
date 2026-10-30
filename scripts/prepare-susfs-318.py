@@ -49,17 +49,67 @@ def replace_once(path, old, new, label):
             f"old={old_count}, new={new_count}"
         )
 
-# Linux 3.18 has BIT/GENMASK in bitops.h, not linux/bits.h. It also uses the
-# legacy thread_info and static_key interfaces.
+# Linux 3.18 has BIT/GENMASK in bitops.h, not linux/bits.h. The pinned
+# SUSFS header is parsed structurally instead of relying on a brittle full
+# multiline string (Git checkouts may differ in BOM/line-ending/blank-line form).
 def_path = ROOT / "include/linux/susfs_def.h"
-def_text = read(def_path)
-old_includes = """#ifndef KSU_SUSFS_DEF_H
-#define KSU_SUSFS_DEF_H
-#include <linux/bits.h>
-#include <linux/string.h>"""
-new_includes = """#ifndef KSU_SUSFS_DEF_H
-#define KSU_SUSFS_DEF_H
-#include <linux/bitops.h>
+
+def patch_susfs_def_header(path):
+    content = read(path).lstrip("\\ufeff")
+    lines = content.splitlines(keepends=True)
+    guards = [i for i, line in enumerate(lines)
+              if line.strip() == "#ifndef KSU_SUSFS_DEF_H"]
+    if len(guards) != 1:
+        preview = repr("".join(lines[:12]))
+        raise SystemExit(
+            "susfs_def.h: expected one KSU_SUSFS_DEF_H guard; "
+            f"found={len(guards)}; header={preview}"
+        )
+
+    guard = guards[0]
+    define = guard + 1
+    while define < len(lines) and not lines[define].strip():
+        define += 1
+    if define >= len(lines) or lines[define].strip() != "#define KSU_SUSFS_DEF_H":
+        raise SystemExit("susfs_def.h: KSU_SUSFS_DEF_H define does not follow its guard")
+
+    # Consume only the leading include/blank block. Do not rewrite later
+    # includes or declarations in the SUSFS UAPI header.
+    end = define + 1
+    include_lines = []
+    while end < len(lines):
+        stripped = lines[end].strip()
+        if not stripped:
+            end += 1
+            continue
+        if stripped.startswith("#include "):
+            include_lines.append(stripped)
+            end += 1
+            continue
+        break
+
+    old_set = ["#include <linux/bits.h>", "#include <linux/string.h>"]
+    new_marker = "void susfs_static_branch_enable(struct static_key *key);"
+    if include_lines == old_set:
+        lines = lines[:define + 1] + [new_includes] + lines[end:]
+        write(path, "".join(lines))
+        return
+    if (include_lines == [
+            "#include <linux/bitops.h>",
+            "#include <linux/cred.h>",
+            "#include <linux/jump_label.h>",
+            "#include <linux/string.h>",
+            "#include <linux/thread_info.h>",
+        ] and new_marker in content):
+        return
+
+    preview = repr("".join(lines[:15]))
+    raise SystemExit(
+        "susfs_def.h: unexpected leading include block; "
+        f"found={include_lines!r}; header={preview}"
+    )
+
+new_includes = """#include <linux/bitops.h>
 #include <linux/cred.h>
 #include <linux/jump_label.h>
 #include <linux/string.h>
@@ -87,7 +137,7 @@ void susfs_static_branch_disable(struct static_key *key);
 #define static_branch_disable(key) susfs_static_branch_disable(key)
 #endif
 """
-replace_once(def_path, old_includes, new_includes, "susfs_def.h legacy includes/static-key API")
+patch_susfs_def_header(def_path)
 
 replace_once(
     def_path,
