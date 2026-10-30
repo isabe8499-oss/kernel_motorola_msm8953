@@ -16,11 +16,14 @@
 #include <linux/mm_inline.h>
 #include <linux/ctype.h>
 
-#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP)
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
 #include <linux/susfs_def.h>
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+extern int susfs_open_redirect_spoof_show_map_vma(struct inode *inode, unsigned long *out_ino, dev_t *out_dev, char **spoofed_name);
 #endif
 
 #include <asm/elf.h>
@@ -348,9 +351,21 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 	unsigned long start, end;
 	dev_t dev = 0;
 	const char *name = NULL;
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	char *spoofed_redirected_name = NULL;
+#endif
 
 	if (file) {
 		struct inode *inode = file_inode(vma->vm_file);
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+		if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
+			if (!susfs_open_redirect_spoof_show_map_vma(inode, &ino, &dev,
+								    &spoofed_redirected_name)) {
+				pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+				goto orig_flow;
+			}
+		}
+#endif
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 		if (SUSFS_IS_INODE_SUS_MAP(inode))
 			return;
@@ -362,11 +377,24 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
 #endif
 	}
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+orig_flow:
+#endif
 
 	/* We don't show the stack guard page in /proc/maps */
 	start = vma->vm_start;
 	end = vma->vm_end;
 	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
+
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	if (spoofed_redirected_name) {
+		seq_pad(m, ' ');
+		seq_puts(m, spoofed_redirected_name);
+		seq_putc(m, '\\n');
+		kfree(spoofed_redirected_name);
+		return;
+	}
+#endif
 
 	/*
 	 * Print the dentry name for named mappings, and a
