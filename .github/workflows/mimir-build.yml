@@ -59,6 +59,12 @@ jobs:
           echo "BakaSU submodule: $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
           git -C KernelSU cat-file -e "$EXPECTED^{commit}"
+          if [ "$(git -C KernelSU rev-parse --is-shallow-repository)" = "true" ]; then
+            git -C KernelSU fetch --unshallow origin
+          fi
+          COMMIT_COUNT="$(git -C KernelSU rev-list --count HEAD)"
+          echo "BakaSU reachable commit count: $COMMIT_COUNT"
+          test "$COMMIT_COUNT" = "4553"
           test -L drivers/kernelsu
           test "$(readlink drivers/kernelsu)" = "../KernelSU/kernel"
 
