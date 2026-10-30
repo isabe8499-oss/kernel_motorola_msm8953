@@ -110,14 +110,6 @@ if "#define NM_LINUX_318_PORT 1" not in nomount_header:
     missing.append("NoMount Linux 3.18 compatibility port marker is missing")
 
 if missing:
-    print("MIMIR INTEGRATION GATE: BLOCKED — refusing to produce a flashable ZIP.")
-    for item in missing:
-        print(f" - {item}")
-    print("\nThis is intentional: the current tree does not yet prove the complete")
-    print("BakaSU + SUSFS 2.2.0 + NoMount 2.2.0 integration.")
-    sys.exit(1)
-
-if missing:
     report = [
         "MIMIR INTEGRATION GATE: BLOCKED — refusing to produce a flashable ZIP.",
         *[f" - {item}" for item in missing],
