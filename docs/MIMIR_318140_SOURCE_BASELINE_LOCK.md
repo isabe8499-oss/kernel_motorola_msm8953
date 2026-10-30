@@ -13,7 +13,7 @@ Este arquivo fixa as revisões de dependências e distingue código conectado, c
 | Componente | Revisão | Estado |
 |---|---|---|
 | BakaSU | `5785bdb8091304322f597f67d50e0b79f9815cb2` | Submódulo conectado; UAPI 6; 4553 commits = manager versionCode 35253 |
-| SUSFS | `4003ecf2d01c6d13fa8edf6c4f2607365738dc3d` | Fonte fixada; `susfs.h` declara v2.2.0; ainda não integrado ao kernel |
+| SUSFS | `4003ecf2d01c6d13fa8edf6c4f2607365738dc3d` | Submódulo conectado e SHA verificado pelo workflow; core ainda não copiado/ligado ao Kbuild |
 | NoMount | `bf1847f98fed382369c43bfd652cd93774b9b8e3` | Fonte v2.2.0/protocolo 22 fixada; ainda não integrado ao kernel |
 
 ## Evidências dos artefatos antigos
@@ -34,14 +34,16 @@ O IKCONFIG recuperado do ZIP antigo contém simultaneamente `CONFIG_KSU_MANUAL_H
 - `deen_defconfig` seleciona `CONFIG_KSU=y`, `CONFIG_KSU_MANUAL_HOOK=y` e opções automáticas de setuid/LSM/input.
 - Hooks manuais adicionados em `fs/exec.c`, `fs/open.c`, `fs/stat.c` e `kernel/reboot.c`. O caminho compat de `execve` também foi instrumentado.
 - O workflow valida o SHA do submódulo, a contagem 4553, e fixa build script, GCC e AnyKernel3 por SHA.
+- O overlay `scripts/apply-bakasu-318-compat.py` é aplicado no CI: separa `KSU_SUSFS` como feature independente, mantém Manual Hook como método e seleciona ABI legada de ponteiro de usuário para `faccessat/stat`.
 - **Ainda não compilado nem validado em runtime.** UAPI 6, driver fd, daemon e root grant continuam pendentes de build/teste.
 
 ### SUSFS 2.2.0
 
-- A revisão upstream está fixada, mas os fontes e patches ainda não foram portados para o fork 3.18.140.
-- O Kconfig upstream mistura o seletor de Inline Hook com o sinalizador de funcionalidade SUSFS. O binário antigo demonstra que a integração local permitia Manual Hook e SUSFS juntos.
-- Próxima alteração: separar `KSU_SUSFS_INLINE_HOOK` (método de hook) de `KSU_SUSFS` (feature), manter Manual Hook, inicializar SUSFS independentemente do seletor e ajustar as condicionais de `sucompat`, `preinit` e `ksud_integration`.
-- Não habilitar `CONFIG_KSU_SUSFS_*` antes de os fontes correspondentes estarem ligados ao build.
+- O submódulo e o SHA v2.2.0 são verificados pelo workflow, mas os arquivos ainda não foram copiados para `fs/susfs.c`/`include/linux/` nem ligados ao Kbuild.
+- O overlay BakaSU move `KSU_SUSFS` para fora da `choice` como feature independente e mantém `KSU_MANUAL_HOOK` como método; também garante que o runtime initrc/input não deixe SUSFS substituir Manual Hook.
+- A fonte SUSFS 2.2.0 não fornece `susfs_is_current_proc_no_su()`, exigido pelo BakaSU 35253/6. A porta precisa acrescentar o helper local com `TIF_PROC_NO_SU=34` sem alterar `SUSFS_VERSION`.
+- O core SUSFS ainda requer adaptação de static keys, `fsnotify_ops`, `nameidata`, `filename_lookup`, readdir, stat/kstat, symlink e open redirect.
+- `CONFIG_KSU_SUSFS` e os sub-recursos permanecem desligados no `deen_defconfig` até os fontes e call sites estarem integrados.
 
 ### NoMount 2.2.0
 
@@ -55,6 +57,8 @@ O IKCONFIG recuperado do ZIP antigo contém simultaneamente `CONFIG_KSU_MANUAL_H
 - [x] Checkout recursivo BakaSU fixado e verificado no workflow.
 - [x] Build script, GCC e AnyKernel3 fixados por commit.
 - [x] BakaSU Manual Hook conectado no Kconfig/Makefile e selecionado no defconfig.
+- [x] Overlay BakaSU 3.18 aplicado pelo workflow, com prioridade Manual Hook quando a feature SUSFS for ativada.
+- [x] Submódulo SUSFS 2.2.0 conectado e verificado pelo workflow.
 - [x] Hooks de syscall obrigatórios identificados e inseridos no fonte.
 - [ ] `make olddefconfig` confirma a configuração esperada.
 - [ ] Kbuild passa `manual_hook_check.mk` e compila o driver ARM64.
