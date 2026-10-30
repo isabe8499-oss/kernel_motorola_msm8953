@@ -45,7 +45,7 @@ O port deve preservar esse conjunto. Não reduzir recursos apenas porque o patch
 
 ## Incompatibilidades que exigem porta explícita
 
-1. **Static keys.** O SUSFS 2.2.0 usa `DEFINE_STATIC_KEY_TRUE/FALSE` e `static_branch_likely/unlikely/enable/disable`. O 3.18 expõe `struct static_key`, `STATIC_KEY_INIT_TRUE/FALSE`, `static_key_true/false`, `static_key_enabled` e `static_key_slow_inc/dec`. Adicionar macros de leitura e inicialização compatíveis. Para enable/disable, manter semântica idempotente e serializada; não mapear cegamente cada chamada moderna a um incremento/decremento de referência.
+1. **Static keys.** O SUSFS 2.2.0 usa `DEFINE_STATIC_KEY_TRUE/FALSE`, `static_branch_likely`, `static_branch_enable` e `static_branch_disable`. O 3.18 já tem `STATIC_KEY_INIT_TRUE/FALSE`, `static_key_true/false`, `static_key_enabled` e `static_key_slow_inc/dec`, mas não os nomes modernos. Adicionar macros compatíveis para inicialização/leitura. Implementar enable/disable com mutex e checagem de `static_key_enabled()`: o comando de log chama enable/disable sem checar o estado, então mapear diretamente para slow_inc/slow_dec vazaria referências após toggles repetidos.
 2. **Header bits.** `linux/bits.h` não existe nesta árvore. O 3.18 já fornece `BIT()` e `GENMASK()` em `linux/bitops.h`; adaptar o include do `susfs_def.h`.
 3. **Nameidata.** `struct nameidata` do 3.18 não possui `state`. SUSFS SUS_PATH usa `ND_STATE_LOOKUP_LAST` e `ND_STATE_OPEN_LAST`. Adicionar campo `state` condicionado à feature e inicializá-lo em `set_nameidata()`; não reutilizar `flags` sem preservar os bits LOOKUP existentes.
 4. **filename_lookup.** A função existe em `fs/namei.c`, mas é `static` e usa assinatura antiga: `filename_lookup(int dfd, struct filename *name, unsigned int flags, struct nameidata *nd)`. Torná-la visível para os call sites SUSFS e declarar a assinatura exata em `fs/internal.h`; não copiar a assinatura de 4.9/5.10.
@@ -57,6 +57,12 @@ O port deve preservar esse conjunto. Não reduzir recursos apenas porque o patch
 10. **Open redirect.** Adaptar os pontos de entrada do 3.18 (`do_filp_open()`, `path_openat()`, `do_last()`, `generic_readlink()`, `proc_pid_get_link()`, `show_map_vma()`) ao invés de copiar os hooks pré-open do GKI.
 11. **KSU hooks duplicados.** O port 4.9/Inline Hook adiciona chamadas para `ksu_handle_sys_read`, `ksu_handle_setresuid`, `ksu_handle_vfs_fstat`, `ksu_handle_sys_reboot` e input hooks. Nesta branch o método escolhido é BakaSU Manual Hook, com LSM/input automáticos e hooks manuais já instalados. Não adicionar chamadas duplicadas: condicionar os hooks Inline Hook ao seletor Inline Hook, preservando os hooks Manual Hook existentes.
 
+
+## Compatibilidade SUSFS 2.2.0 com o BakaSU 35253/6
+
+- O `sucompat.h` do BakaSU UAPI 6 usa `susfs_is_current_proc_no_su()` quando `CONFIG_KSU_SUSFS` está habilitado. O `susfs_def.h` oficial v2.2.0 não declara esse helper nem `TIF_PROC_NO_SU`; o helper aparece em versões posteriores. A porta local precisa acrescentar o bit livre `TIF_PROC_NO_SU 34` e os helpers `susfs_is_current_proc_no_su`, `susfs_set_current_proc_no_su` e `susfs_clear_current_proc_no_su`, sem alterar `SUSFS_VERSION`.
+- O `susfs.c` v2.2.0 usa `fsnotify_ops.handle_inode_event` com callback `(mark, mask, inode, dir, qstr, cookie)`. O 3.18 só tem `fsnotify_ops.handle_event` com `(group, inode, inode_mark, vfsmount_mark, mask, data, data_type, file_name, cookie)`. Adicionar um adaptador que construa `qstr` a partir de `file_name` e encaminhe para o handler SUSFS legado. O port 4.9/2.3.0 tem um exemplo dessa ponte; usar apenas como referência de API, não como fonte da versão.
+- O `fsnotify_alloc_group(&fsnotify_ops)` sem flags já é o caminho usado pelo 3.18 e pelo ramo legado do SUSFS; manter essa assinatura.
 ## Bug de bitmask encontrado na fonte 2.2.0
 
 Em `susfs.h`, a definição de `KSTAT_SPOOF_CTIME_TV_SEC` aparece como:
