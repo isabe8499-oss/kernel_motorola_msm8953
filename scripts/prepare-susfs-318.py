@@ -256,6 +256,13 @@ replace_once(
 )
 
 
+replace_once(
+    susfs_c,
+    "strscpy(spoofed_name, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);",
+    "strscpy(*spoofed_name, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);",
+    "SUSFS open redirect maps output copy",
+)
+
 # 3.18 fsnotify uses handle_event(group, inode, marks, mask, data, type,
 # file_name, cookie), fsnotify_init_mark(mark, free_mark), and fsnotify_add_mark.
 fsnotify_old = """static const struct fsnotify_ops fsnotify_ops = {
