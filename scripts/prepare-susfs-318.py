@@ -331,10 +331,12 @@ susfs_readdir_get_sb(struct file *file, struct path *data_path, int *path_err)
     *path_err = -EINVAL;
     if (sb->s_magic == FUSE_SUPER_MAGIC) {
         *path_err = susfs_get_data_path(data_path);
-        if (!*path_err && data_path->dentry && data_path->dentry->d_inode)
-            return data_path->dentry->d_inode->i_sb;
-        if (!*path_err)
+        if (!*path_err) {
+            if (data_path->dentry && data_path->dentry->d_inode)
+                return data_path->dentry->d_inode->i_sb;
+            path_put(data_path);
             *path_err = -ENOENT;
+        }
     }
     return sb;
 }
