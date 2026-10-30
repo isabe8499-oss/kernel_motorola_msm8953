@@ -406,12 +406,6 @@ replace_once(
 # released on both paths before returning to the filesystem iterator.
 replace_once(
     readdir,
-    "\tunsigned long d_ino;\n\n\tif (buf->result)",
-    "\tunsigned long d_ino;\n\n\tif (buf->result)",
-    "old_readdir overflow anchor",
-)
-replace_once(
-    readdir,
     "\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {\n\t\tbuf->result = -EOVERFLOW;\n\t\treturn -EOVERFLOW;\n\t}\n\tif (hide_name(name, namlen) && buf->ctx.romnt)",
     """\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {
 \t\tbuf->result = -EOVERFLOW;
@@ -423,12 +417,6 @@ replace_once(
 #endif
 \tif (hide_name(name, namlen) && buf->ctx.romnt)""",
     "old_readdir SUS_PATH filtering",
-)
-replace_once(
-    readdir,
-    "\t\tif (!f.file)\n\t\t\treturn -EBADF;",
-    "\t\tif (!f.file)\n\t\t\treturn -EBADF;",
-    "old_readdir descriptor anchor",
 )
 replace_once(
     readdir,
@@ -478,12 +466,6 @@ replace_once(
     "old_readdir FUSE data path release",
 )
 
-replace_once(
-    readdir,
-    "\tunsigned long d_ino;\n\tint reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,",
-    "\tunsigned long d_ino;\n\tint reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,",
-    "getdents filldir declaration",
-)
 replace_once(
     readdir,
     """\tif (sizeof(d_ino) < sizeof(ino) && d_ino != ino) {
