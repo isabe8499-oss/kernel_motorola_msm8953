@@ -695,12 +695,6 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 	struct proc_maps_private *priv = m->private;
 	struct vm_area_struct *vma = v;
 	struct mem_size_stats mss_stack;
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-	if (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))) {
-		m_cache_vma(m, vma);
-		return 0;
-	}
-#endif
 	struct mem_size_stats *mss;
 	struct mm_walk smaps_walk = {
 		.pmd_entry = smaps_pte_range,
@@ -709,6 +703,13 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 	int ret = 0;
 	bool rollup_mode;
 	bool last_vma;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	if (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))) {
+		m_cache_vma(m, vma);
+		return 0;
+	}
+#endif
 
 	if (priv->rollup) {
 		rollup_mode = true;
