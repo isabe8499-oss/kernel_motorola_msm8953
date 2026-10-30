@@ -50,6 +50,20 @@ def replace_once(path, old, new, label):
             f"old={old_count}, new={new_count}"
         )
 
+def replace_expected(path, old, new, expected_count, label):
+    content = read(path)
+    old_count = content.count(old)
+    new_count = content.count(new)
+    if old_count == expected_count and new_count == 0:
+        write(path, content.replace(old, new))
+    elif old_count == 0 and new_count == expected_count:
+        return
+    else:
+        raise SystemExit(
+            f"{label}: expected {expected_count} upstream or patched anchors; "
+            f"old={old_count}, new={new_count}"
+        )
+
 # Linux 3.18 has BIT/GENMASK in bitops.h, not linux/bits.h. The pinned
 # SUSFS header is parsed structurally instead of relying on a brittle full
 # multiline string (Git checkouts may differ in BOM/line-ending/blank-line form).
@@ -487,7 +501,7 @@ replace_once(
 \tif (hide_name(name, namlen) && buf->ctx.romnt)""",
     "getdents SUS_PATH filtering",
 )
-replace_once(
+replace_expected(
     readdir,
     """\t};
 \tint error;
@@ -518,7 +532,7 @@ replace_once(
 \tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
 #endif
 \terror = iterate_dir(f.file, &buf.ctx);""",
-    "getdents superblock selection",
+    "getdents/getdents64 shared superblock selection", 2,
 )
 replace_once(
     readdir,
@@ -583,11 +597,14 @@ replace_once(
 \tbuf.sb = susfs_readdir_get_sb(f.file, &data_path, &path_err);
 #endif
 \terror = iterate_dir(f.file, &buf.ctx);""",
-    "getdents64 superblock selection",
+    "getdents64 superblock selection", 2,
 )
 replace_once(
     readdir,
-    """\tfdput(f);
+    """\t\telse
+\t\t\terror = count - buf.count;
+\t}
+\tfdput(f);
 \treturn error;
 }""",
     """\tfdput(f);
