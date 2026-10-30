@@ -150,8 +150,9 @@ nomount_required = (
     "KERNEL_VERSION(4, 5, 0)",
     "KERNEL_VERSION(4, 4, 0)",
 )
+nomount_combined = nomount_text + "\\n" + nomount_header
 for marker in nomount_required:
-    if marker not in nomount_text:
+    if marker not in nomount_combined:
         missing.append(f"NoMount Linux 3.18 VFS adapter missing: {marker}")
 
 nomount_makefile = (ROOT / "fs/nomount/Makefile")
