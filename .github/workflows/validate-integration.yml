@@ -39,6 +39,7 @@ jobs:
         run: |
           test "$(git -C KernelSU rev-parse HEAD)" = "5785bdb8091304322f597f67d50e0b79f9815cb2"
           test "$(git -C SUSFS rev-parse HEAD)" = "4003ecf2d01c6d13fa8edf6c4f2607365738dc3d"
+          test "$(git -C NoMount rev-parse HEAD)" = "bf1847f98fed382369c43bfd652cd93774b9b8e3"
           test "$(git -C KernelSU rev-list --count HEAD)" = "4553"
 
       - name: Validate Python integration scripts
@@ -58,6 +59,13 @@ jobs:
           test "$(grep -c '!defined(KSU_COMPAT_LEGACY_USERPATH)' KernelSU/kernel/feature/sucompat.c)" -eq 2
           grep -q 'susfs_compat.mk' KernelSU/kernel/Kbuild
 
+      - name: Stage SUSFS v2.2.0 core with Linux 3.18 shims
+        run: |
+          python3 scripts/prepare-susfs-318.py
+          test -f fs/susfs.c
+          test -f include/linux/susfs.h
+          grep -q '#define SUSFS_VERSION "v2.2.0"' include/linux/susfs.h
+
       - name: Stage pinned NoMount source without enabling it
         run: |
           python3 scripts/stage-nomount-318.py
@@ -69,6 +77,8 @@ jobs:
       - name: Confirm kernel features remain gated
         shell: bash
         run: |
-          ! grep -q '^CONFIG_KSU=y' arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU=y' arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y' arch/arm64/configs/deen_defconfig
           ! grep -q '^CONFIG_KSU_SUSFS=y' arch/arm64/configs/deen_defconfig
-          echo "Overlay validated; full feature enablement is intentionally gated pending SUSFS/NoMount port."
+          ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
+          echo "BakaSU Manual Hook and source staging validated; SUSFS/NoMount remain disabled pending full 3.18 VFS port."
