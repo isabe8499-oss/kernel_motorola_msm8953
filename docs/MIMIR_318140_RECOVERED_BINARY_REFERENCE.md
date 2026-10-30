@@ -86,3 +86,17 @@ This is strong evidence that the old binary included custom SUSFS implementation
 4. Not yet validated: clean ARM64 build, boot, root manager handshake, NoMount protocol, filesystem behavior, or flashable ZIP.
 
 Keep the known-good boot/recovery image. Do not flash a newly built kernel until build artifacts and device-side smoke tests have been checked.
+
+## Outras opções relevantes confirmadas no IKCONFIG
+
+A extração integral do IKCONFIG do mesmo ZIP confirma também:
+
+```text
+CONFIG_THREAD_INFO_IN_TASK=y
+CONFIG_KEYS=y
+CONFIG_KALLSYMS=y
+CONFIG_KALLSYMS_ALL=y
+# CONFIG_JUMP_LABEL is not set
+```
+
+Consequências para a reconstrução: manter `THREAD_INFO_IN_TASK` e `KEYS` habilitados; preservar `KALLSYMS_ALL` para a ocultação de símbolos; não habilitar `JUMP_LABEL` apenas para fazer o SUSFS funcionar, pois o Linux 3.18 possui fallback atômico de `static_key_slow_inc/dec` quando jump labels estão desativados.
