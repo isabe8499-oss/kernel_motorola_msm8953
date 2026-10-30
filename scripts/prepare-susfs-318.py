@@ -311,6 +311,7 @@ replace_once(
     "#include <linux/unistd.h>\n",
     """#include <linux/unistd.h>
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+#include <linux/magic.h>
 #include <linux/susfs_def.h>
 extern int susfs_get_data_path(struct path *path);
 extern bool susfs_is_inode_sus_path(struct inode *inode);
