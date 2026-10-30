@@ -589,10 +589,7 @@ replace_once(
 replace_once_in_region(
     readdir,
     "SYSCALL_DEFINE3(getdents64",
-    """\t\telse
-\t\t\terror = count - buf.count;
-\t}
-\tfdput(f);
+    """\tfdput(f);
 \treturn error;
 }""",
     """\tfdput(f);
