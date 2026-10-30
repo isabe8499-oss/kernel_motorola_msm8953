@@ -244,8 +244,6 @@ replace_once(
 )
 replace_once(
     susfs_c,
-replace_once(
-    susfs_c,
     "\tif (spoofed_name) {\n\t\tSUSFS_LOGE(\"spoofed_name must be NULL first!\\n\");\n\t\treturn -EINVAL;\n\t}",
     "\tif (!spoofed_name || *spoofed_name) {\n\t\tSUSFS_LOGE(\"spoofed_name output must point to NULL!\\n\");\n\t\treturn -EINVAL;\n\t}",
     "SUSFS open redirect maps output validation",
@@ -256,13 +254,7 @@ replace_once(
     "\t\t\t*spoofed_name = kzalloc(SUSFS_MAX_LEN_PATHNAME, GFP_KERNEL);\n\t\t\tif (!*spoofed_name) {",
     "SUSFS open redirect maps output allocation",
 )
-)
-replace_once(
-    susfs_c,
-    "strscpy(spoofed_name, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);",
-    "strscpy(*spoofed_name, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);",
-    "SUSFS open redirect maps output copy",
-)
+
 
 # 3.18 fsnotify uses handle_event(group, inode, marks, mask, data, type,
 # file_name, cookie), fsnotify_init_mark(mark, free_mark), and fsnotify_add_mark.
