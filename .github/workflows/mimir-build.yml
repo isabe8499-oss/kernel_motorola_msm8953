@@ -111,16 +111,30 @@ jobs:
 
           path = Path("build.sh")
           script = path.read_text()
-          replacements = {
-              'git clone --depth=1 --single-branch -b 4.9.x-2015 https://github.com/Vhmit/platform_prebuilts_gcc "$toolchain_dir"':
-              'git init "$toolchain_dir"\n        git -C "$toolchain_dir" remote add origin https://github.com/Vhmit/platform_prebuilts_gcc\n        git -C "$toolchain_dir" fetch --depth=1 origin 0d8d0f715973db533afb85725492c17c43e8dcc1\n        git -C "$toolchain_dir" checkout --detach FETCH_HEAD',
-              'git clone --depth=1 --single-branch https://github.com/Vhmit/AnyKernel3.git -b "\${DEVICE}" "$anykernel"':
-              'git init "$anykernel"\n        git -C "$anykernel" remote add origin https://github.com/Vhmit/AnyKernel3.git\n        git -C "$anykernel" fetch --depth=1 origin a3249880710e9702798bcb8f5211cc9f2e63e4a7\n        git -C "$anykernel" checkout --detach FETCH_HEAD',
-          }
-          for old, new in replacements.items():
+          gcc_old = """    if ! git clone --depth=1 --single-branch -b 4.9.x-2015 https://github.com/Vhmit/platform_prebuilts_gcc "$toolchain_dir"; then
+          echo "Cloning failed! Aborting..."
+          exit 1
+      fi"""
+          gcc_new = """    if ! (git init "$toolchain_dir" &&
+          git -C "$toolchain_dir" remote add origin https://github.com/Vhmit/platform_prebuilts_gcc &&
+          git -C "$toolchain_dir" fetch --depth=1 origin 0d8d0f715973db533afb85725492c17c43e8dcc1 &&
+          git -C "$toolchain_dir" checkout --detach FETCH_HEAD); then
+          echo "Pinned GCC checkout failed! Aborting..."
+          exit 1
+      fi"""
+          ak_old = """        git clone --depth=1 --single-branch https://github.com/Vhmit/AnyKernel3.git -b "${DEVICE}" "$anykernel""""
+          ak_new = """        if ! (git init "$anykernel" &&
+            git -C "$anykernel" remote add origin https://github.com/Vhmit/AnyKernel3.git &&
+            git -C "$anykernel" fetch --depth=1 origin a3249880710e9702798bcb8f5211cc9f2e63e4a7 &&
+            git -C "$anykernel" checkout --detach FETCH_HEAD); then
+            echo "Pinned AnyKernel3 checkout failed! Aborting..."
+            exit 1
+        fi"""
+          replacements = ((gcc_old, gcc_new), (ak_old, ak_new))
+          for old, new in replacements:
               if old not in script:
-                  raise SystemExit(f"Expected build command not found: {old}")
-              script = script.replace(old, new)
+                  raise SystemExit(f"Expected complete build block not found: {old}")
+              script = script.replace(old, new, 1)
           path.write_text(script)
           PY
           chmod +x ./build.sh
