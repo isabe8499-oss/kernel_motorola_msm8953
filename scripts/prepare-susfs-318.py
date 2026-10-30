@@ -55,7 +55,7 @@ def replace_once(path, old, new, label):
 def_path = ROOT / "include/linux/susfs_def.h"
 
 def patch_susfs_def_header(path):
-    content = read(path).lstrip("\\ufeff")
+    content = read(path).lstrip("\ufeff")
     lines = content.splitlines(keepends=True)
     guards = [i for i, line in enumerate(lines)
               if line.strip() == "#ifndef KSU_SUSFS_DEF_H"]
