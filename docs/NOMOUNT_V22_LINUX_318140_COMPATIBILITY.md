@@ -36,9 +36,11 @@ Inspected the exact integration branch headers:
 
 ## Current repository status
 
-- The integration branch has not yet received NoMount C/H sources or kernel build integration.
-- The existing workflow delegates to a moving external build script (`Vhmit/mimir-build-script`, branch `v3.x-gcc`) rather than building a pinned, locally reviewed configuration from this branch. Its optional KSU input defaults to `n`; therefore a successful run of that workflow would not prove this BakaSU/SUSFS/NoMount target.
-- No source port, compile, boot test, or flashable ZIP is claimed by this assessment.
+- The `NoMount` submodule is present and pinned to the exact v2.2.0 commit above.
+- `scripts/stage-nomount-318.py` copies `nomount.c`, `nomount.h`, Kconfig and Makefile into `fs/nomount` during CI, changes upstream `default y` to `default n`, and wires the conditional Kconfig/Makefile entries. This is source staging only; it is not a Linux 3.18 compatibility port.
+- The workflow pins the build helper (`Vhmit/mimir-build-script` commit `71abd60bb5c110a6de841a799b99af6fe2fa5f46`), GCC toolchain (`0d8d0f715973db533afb85725492c17c43e8dcc1`) and AnyKernel3 (`a3249880710e9702798bcb8f5211cc9f2e63e4a7`). It invokes the build helper with `-ksu`.
+- A hard integration gate runs before compilation and deliberately blocks packaging until the Linux 3.18 NoMount marker/hooks and the full BakaSU/SUSFS feature set are present.
+- No NoMount source port, successful ARM64 compile, boot test, or flashable ZIP is claimed by this assessment.
 
 ## Acceptance gates
 
