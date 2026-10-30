@@ -5,3 +5,7 @@
 [submodule "SUSFS"]
 	path = SUSFS
 	url = https://gitlab.com/simonpunk/susfs4ksu.git
+
+[submodule "NoMount"]
+	path = NoMount
+	url = https://github.com/maxsteeel/nomount
