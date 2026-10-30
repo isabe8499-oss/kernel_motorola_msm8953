@@ -112,6 +112,32 @@ if '#define NOMOUNT_BASE_VERSION "22"' not in nomount_header:
 if "#define NM_LINUX_318_PORT 1" not in nomount_header:
     missing.append("NoMount Linux 3.18 compatibility port marker is missing")
 
+# Verify the actual legacy VFS adapters. A marker alone must not let the
+# feature gate pass if the 3.18 callbacks are missing from the staged source.
+nomount_required = (
+    ".follow_link = nm_follow_link",
+    ".put_link = nm_put_link",
+    ".readlink = generic_readlink",
+    ".getxattr = nm_getxattr",
+    ".setxattr = nm_setxattr",
+    ".removexattr = nm_removexattr",
+    "vfs_listxattr(info->r_path.dentry",
+    "KERNEL_VERSION(4, 7, 0)",
+    "KERNEL_VERSION(4, 5, 0)",
+    "KERNEL_VERSION(4, 4, 0)",
+)
+for marker in nomount_required:
+    if marker not in nomount_text:
+        missing.append(f"NoMount Linux 3.18 VFS adapter missing: {marker}")
+
+nomount_makefile = (ROOT / "fs/nomount/Makefile")
+if nomount_makefile.is_file():
+    make_text = nomount_makefile.read_text(errors="replace")
+    if "obj-$(CONFIG_NOMOUNT) += nomount.o" not in make_text:
+        missing.append("NoMount Kbuild object rule missing")
+else:
+    missing.append("NoMount Kbuild Makefile missing")
+
 if missing:
     report = [
         "MIMIR INTEGRATION GATE: BLOCKED — refusing to produce a flashable ZIP.",
