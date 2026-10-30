@@ -16,6 +16,9 @@
 #include <linux/syscalls.h>
 #include <linux/syscore_ops.h>
 #include <linux/uaccess.h>
+#ifdef CONFIG_KSU_MANUAL_HOOK
+#include <linux/ksu_hooks.h>
+#endif
 
 /*
  * this indicates whether you can reboot with ctrl-alt-del: the default is yes
@@ -314,6 +317,15 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	struct pid_namespace *pid_ns = task_active_pid_ns(current);
 	char buffer[256];
 	int ret = 0;
+
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	/* KernelSU installs its driver fd through the reboot syscall hook. */
+	if (magic1 == KSU_INSTALL_MAGIC1) {
+		void __user *ksu_arg = arg;
+
+		return ksu_handle_sys_reboot(magic1, magic2, cmd, &ksu_arg);
+	}
+#endif
 
 	/* We only trust the superuser with rebooting the system. */
 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))

@@ -43,6 +43,9 @@
 #include <linux/pid_namespace.h>
 #include <linux/module.h>
 #include <linux/namei.h>
+#ifdef CONFIG_KSU_MANUAL_HOOK
+#include <linux/ksu_hooks.h>
+#endif
 #include <linux/mount.h>
 #include <linux/security.h>
 #include <linux/syscalls.h>
@@ -1641,7 +1644,17 @@ int do_execve(struct filename *filename,
 {
 	struct user_arg_ptr argv = { .ptr.native = __argv };
 	struct user_arg_ptr envp = { .ptr.native = __envp };
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	int retval;
+
+	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, NULL);
+	retval = do_execve_common(filename, argv, envp);
+	ksu_handle_post_execveat((int *)AT_FDCWD, &filename, &argv, &envp,
+				 NULL, &retval);
+	return retval;
+#else
 	return do_execve_common(filename, argv, envp);
+#endif
 }
 
 #ifdef CONFIG_COMPAT
@@ -1657,7 +1670,17 @@ static int compat_do_execve(struct filename *filename,
 		.is_compat = true,
 		.ptr.compat = __envp,
 	};
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	int retval;
+
+	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, NULL);
+	retval = do_execve_common(filename, argv, envp);
+	ksu_handle_post_execveat((int *)AT_FDCWD, &filename, &argv, &envp,
+				 NULL, &retval);
+	return retval;
+#else
 	return do_execve_common(filename, argv, envp);
+#endif
 }
 #endif
 
