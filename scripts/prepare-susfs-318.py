@@ -50,6 +50,25 @@ def replace_once(path, old, new, label):
             f"old={old_count}, new={new_count}"
         )
 
+def replace_once_in_region(path, start_marker, old, new, label):
+    content = read(path)
+    start = content.find(start_marker)
+    if start < 0:
+        raise SystemExit(f"{label}: function boundary not found: {start_marker}")
+    region = content[start:]
+    old_count = region.count(old)
+    new_count = region.count(new)
+    if old_count == 1 and new_count == 0:
+        region = region.replace(old, new, 1)
+        write(path, content[:start] + region)
+    elif old_count == 0 and new_count == 1:
+        return
+    else:
+        raise SystemExit(
+            f"{label}: expected one upstream or one patched anchor in scoped function; "
+            f"old={old_count}, new={new_count}"
+        )
+
 def replace_expected(path, old, new, expected_count, label):
     content = read(path)
     old_count = content.count(old)
@@ -567,8 +586,9 @@ replace_once(
 \tif (hide_name(name, namlen) && buf->ctx.romnt)""",
     "getdents64 SUS_PATH filtering",
 )
-replace_once(
+replace_once_in_region(
     readdir,
+    "SYSCALL_DEFINE3(getdents64",
     """\t\telse
 \t\t\terror = count - buf.count;
 \t}
