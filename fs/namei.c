@@ -1397,7 +1397,16 @@ static struct dentry *lookup_dcache(struct qstr *name, struct dentry *dir,
 	if ((flags & ND_FLAGS_LOOKUP_LAST) && dentry && dentry->d_inode &&
 	    susfs_is_inode_sus_path(dentry->d_inode)) {
 		dput(dentry);
-		dentry = NULL;
+		if (dir->d_inode && dir->d_inode->i_op &&
+		    dir->d_inode->i_op->lookup) {
+			dentry = NULL;
+		} else {
+			dentry = d_alloc(dir, &susfs_fake_qstr_name);
+			if (!dentry)
+				return ERR_PTR(-ENOMEM);
+			*need_lookup = true;
+			return dentry;
+		}
 	}
 #endif
 	if (dentry) {
@@ -2994,7 +3003,7 @@ static int lookup_open(struct nameidata *nd, struct path *path,
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	if (nd->state & ND_STATE_OPEN_LAST) {
+	if ((nd->state & ND_STATE_OPEN_LAST) && dir_inode->i_op->lookup) {
 		if (need_lookup) {
 			BUG_ON(dentry->d_inode);
 			dentry = lookup_real(dir_inode, dentry, nd->flags);
