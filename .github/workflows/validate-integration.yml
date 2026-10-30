@@ -84,17 +84,41 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu bc bison flex libssl-dev libelf-dev
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- deen_defconfig
-          if grep -q '^# CONFIG_NOMOUNT is not set$' .config; then
-            sed -i 's/^# CONFIG_NOMOUNT is not set$/CONFIG_NOMOUNT=y/' .config
+          # This tree can contain old generated include/config files. Remove
+          # source-tree build products, then use one isolated O= directory.
+          unset O KBUILD_OUTPUT KBUILD_SRC
+          make ARCH=arm64 mrproper
+          OUT_DIR="$RUNNER_TEMP/mimir-nomount-build"
+          rm -rf "$OUT_DIR"
+          make O="$OUT_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- deen_defconfig
+          if grep -q '^# CONFIG_NOMOUNT is not set
+      - name: Confirm kernel features remain gated
+        shell: bash
+        run: |
+          grep -q '^CONFIG_KSU=y' arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y' arch/arm64/configs/deen_defconfig
+          ! grep -q '^CONFIG_KSU_SUSFS=y' arch/arm64/configs/deen_defconfig
+          ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
+          echo "BakaSU Manual Hook and SUSFS staging passed; NoMount 3.18 object compile is checked separately from the shipped config."
+ "$OUT_DIR/.config"; then
+            sed -i 's/^# CONFIG_NOMOUNT is not set$/CONFIG_NOMOUNT=y/' "$OUT_DIR/.config"
           else
-            echo 'CONFIG_NOMOUNT=y' >> .config
+            echo 'CONFIG_NOMOUNT=y' >> "$OUT_DIR/.config"
           fi
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-          grep -q '^CONFIG_NOMOUNT=y$' .config
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 fs/nomount/nomount.o
-          test -s fs/nomount/nomount.o
-          file fs/nomount/nomount.o
+          make O="$OUT_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -q '^CONFIG_NOMOUNT=y
+      - name: Confirm kernel features remain gated
+        shell: bash
+        run: |
+          grep -q '^CONFIG_KSU=y' arch/arm64/configs/deen_defconfig
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y' arch/arm64/configs/deen_defconfig
+          ! grep -q '^CONFIG_KSU_SUSFS=y' arch/arm64/configs/deen_defconfig
+          ! grep -q '^CONFIG_NOMOUNT=y' arch/arm64/configs/deen_defconfig
+          echo "BakaSU Manual Hook and SUSFS staging passed; NoMount 3.18 object compile is checked separately from the shipped config."
+ "$OUT_DIR/.config"
+          make O="$OUT_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 fs/nomount/nomount.o
+          test -s "$OUT_DIR/fs/nomount/nomount.o"
+          file "$OUT_DIR/fs/nomount/nomount.o"
       - name: Confirm kernel features remain gated
         shell: bash
         run: |
