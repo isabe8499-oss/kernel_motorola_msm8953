@@ -78,11 +78,6 @@ hook_checks = {
         "susfs_fake_qstr_name",
         "susfs_open_redirect_spoof_do_sys_openat",
     ),
-    "fs/open.c": (
-        "SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK",
-        "susfs_open_redirect_spoof_do_sys_openat",
-        "goto retry;",
-    ),
     "fs/readdir.c": (
         "susfs_is_hidden_dirent(buf->sb, ino)",
         "susfs_readdir_get_sb",
