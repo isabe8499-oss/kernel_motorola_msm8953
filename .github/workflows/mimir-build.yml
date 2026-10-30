@@ -68,6 +68,21 @@ jobs:
           test -L drivers/kernelsu
           test "$(readlink drivers/kernelsu)" = "../KernelSU/kernel"
 
+      - name: Verify pinned SUSFS v2.2.0 source
+        run: |
+          # SUSFS is pinned to the GKI 5.10 upstream source commit; kernel-side hooks
+          # still require the dedicated Linux 3.18 port before the files are copied.
+          test -e SUSFS/.git
+          ACTUAL="$(git -C SUSFS rev-parse HEAD)"
+          EXPECTED="4003ecf2d01c6d13fa8edf6c4f2607365738dc3d"
+          echo "SUSFS source: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+          git -C SUSFS cat-file -e "$EXPECTED^{commit}"
+          test -f SUSFS/kernel_patches/fs/susfs.c
+          test -f SUSFS/kernel_patches/include/linux/susfs.h
+          test -f SUSFS/kernel_patches/include/linux/susfs_def.h
+          test -f SUSFS/50_add_susfs_in_gki-android12-5.10.patch
+
       - name: Notify Build Started
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
