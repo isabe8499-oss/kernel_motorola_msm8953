@@ -68,7 +68,16 @@ if SUSFS_H.is_file():
 
 # These feature hooks must exist in the kernel tree, not merely in Kconfig.
 hook_checks = {
-    "fs/namei.c": ("susfs_is_inode_sus_path", "susfs_open_redirect_spoof_do_sys_openat"),
+    "include/linux/namei.h": (
+        "ND_STATE_LOOKUP_LAST",
+        "ND_STATE_OPEN_LAST",
+        "ND_FLAGS_LOOKUP_LAST",
+    ),
+    "fs/namei.c": (
+        "susfs_is_inode_sus_path",
+        "susfs_fake_qstr_name",
+        "susfs_open_redirect_spoof_do_sys_openat",
+    ),
     "fs/open.c": (
         "SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK",
         "susfs_open_redirect_spoof_do_sys_openat",
