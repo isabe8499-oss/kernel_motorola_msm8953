@@ -61,9 +61,9 @@ A adaptação planejada é separar o seletor `KSU_SUSFS_INLINE_HOOK` do sinaliza
 
 ## Estado e critérios de aceitação
 
-<badge color="success">Código-fonte conectado</badge> Os hooks obrigatórios de Manual Hook foram inseridos e o defconfig seleciona BakaSU. O workflow também valida o checkout fixado e o número de commits.
+**Código-fonte conectado:** os hooks obrigatórios de Manual Hook foram inseridos e o defconfig seleciona BakaSU. O workflow também valida o checkout fixado e o número de commits.
 
-<badge color="warning">Ainda sem build/boot</badge> Não foi executada uma compilação ARM64 depois dessas alterações. Não há confirmação runtime de UAPI 6, instalação do descritor, root grant, daemon ou boot.
+**Ainda sem build/boot:** não foi executada uma compilação ARM64 depois dessas alterações. Não há confirmação runtime de UAPI 6, instalação do descritor, root grant, daemon ou boot.
 
 - [ ] Executar `make olddefconfig` e confirmar `CONFIG_KSU=y` + `CONFIG_KSU_MANUAL_HOOK=y`.
 - [ ] Passar o `manual_hook_check.mk` durante o Kbuild.
