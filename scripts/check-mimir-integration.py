@@ -70,15 +70,12 @@ if SUSFS_H.is_file():
 hook_checks = {
     "fs/namei.c": ("susfs_is_inode_sus_path", "susfs_open_redirect_spoof_do_sys_openat"),
     "fs/stat.c": ("susfs_sus_kstat_spoof_generic_fillattr",),
-    "mm": ("susfs_sus_kstat_spoof_show_map_vma",),
+    "fs/proc/task_mmu.c": ("susfs_sus_kstat_spoof_show_map_vma",),
     "drivers/kernelsu": ("susfs_init",),
 }
 for rel, markers in hook_checks.items():
     path = ROOT / rel
-    if rel == "mm":
-        candidates = list((ROOT / "mm").glob("*.c"))
-        content = "\n".join(p.read_text(errors="replace") for p in candidates)
-    elif rel == "drivers/kernelsu":
+    if rel == "drivers/kernelsu":
         candidates = list((ROOT / "KernelSU/kernel").rglob("*.c"))
         content = "\n".join(p.read_text(errors="replace") for p in candidates)
     elif path.is_file():
