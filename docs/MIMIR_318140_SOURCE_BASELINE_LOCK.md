@@ -39,11 +39,11 @@ O IKCONFIG recuperado do ZIP antigo contém simultaneamente `CONFIG_KSU_MANUAL_H
 
 ### SUSFS 2.2.0
 
-- O submódulo e o SHA v2.2.0 são verificados pelo workflow, mas os arquivos ainda não foram copiados para `fs/susfs.c`/`include/linux/` nem ligados ao Kbuild.
+- O submódulo e o SHA v2.2.0 são verificados pelo workflow. `scripts/prepare-susfs-318.py` está ligado ao CI para copiar os arquivos core, aplicar shims de static key/fsnotify/no-su e adicionar `fs/susfs.o`; a etapa ainda não foi executada em uma compilação validada.
 - O overlay BakaSU move `KSU_SUSFS` para fora da `choice` como feature independente e mantém `KSU_MANUAL_HOOK` como método; também garante que o runtime initrc/input não deixe SUSFS substituir Manual Hook.
 - A fonte SUSFS 2.2.0 não fornece `susfs_is_current_proc_no_su()`, exigido pelo BakaSU 35253/6. A porta precisa acrescentar o helper local com `TIF_PROC_NO_SU=34` sem alterar `SUSFS_VERSION`.
-- O core SUSFS ainda requer adaptação de static keys, `fsnotify_ops`, `nameidata`, `filename_lookup`, readdir, stat/kstat, symlink e open redirect.
-- `CONFIG_KSU_SUSFS` e os sub-recursos permanecem desligados no `deen_defconfig` até os fontes e call sites estarem integrados.
+- Os shims de static keys e `fsnotify_ops` estão preparados no script; `nameidata.state`, `filename_lookup`, SUS_PATH e entradas open redirect em `do_filp_open`/`generic_readlink` já estão no código do fork sob guards. Readdir, stat/kstat, mount, procfs, cmdline, kallsyms e mm ainda requerem call sites.
+- `CONFIG_KSU_SUSFS` e os sub-recursos permanecem desligados no `deen_defconfig` até todos os call sites estarem integrados e compilados. O IKCONFIG antigo tinha `CONFIG_JUMP_LABEL` desligado; o fallback atômico do 3.18 preserva static keys, portanto não forçar essa opção.
 
 ### NoMount 2.2.0
 
