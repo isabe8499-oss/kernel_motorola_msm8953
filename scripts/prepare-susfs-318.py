@@ -162,9 +162,9 @@ def patch_no_su_helpers(path):
     # Match the actual pinned upstream helper independent of tabs/spaces and
     # CRLF/LF. Limit the match to this small function body, not the whole header.
     pattern = re.compile(
-        r"(?m)^(?P<indent>[ \\t]*)static inline void "
-        r"susfs_set_current_proc_umounted\\s*\\(\\s*void\\s*\\)\\s*\\{"
-        r"\\s*(?P<body>[ \\t]*set_thread_flag\\s*\\(\\s*TIF_PROC_UMOUNTED\\s*\\)\\s*;\\s*)\\}"
+        r"(?m)^(?P<indent>[ \t]*)static inline void "
+        r"susfs_set_current_proc_umounted\s*\(\s*void\s*\)\s*\{"
+        r"\s*(?P<body>[ \t]*set_thread_flag\s*\(\s*TIF_PROC_UMOUNTED\s*\)\s*;\s*)\}"
     )
     matches = list(pattern.finditer(content))
     if len(matches) != 1:
@@ -180,16 +180,16 @@ def patch_no_su_helpers(path):
     indent = match.group("indent")
     helper_block = (
         match.group(0)
-        + "\\n"
-        + indent + "static inline bool susfs_is_current_proc_no_su(void) {\\n"
-        + indent + "\\treturn likely(test_thread_flag(TIF_PROC_NO_SU));\\n"
-        + indent + "}\\n"
-        + indent + "static inline void susfs_set_current_proc_no_su(void) {\\n"
-        + indent + "\\tset_thread_flag(TIF_PROC_NO_SU);\\n"
-        + indent + "}\\n"
-        + indent + "static inline void susfs_clear_current_proc_no_su(void) {\\n"
-        + indent + "\\tclear_thread_flag(TIF_PROC_NO_SU);\\n"
-        + indent + "}\\n"
+        + "\n"
+        + indent + "static inline bool susfs_is_current_proc_no_su(void) {\n"
+        + indent + "\treturn likely(test_thread_flag(TIF_PROC_NO_SU));\n"
+        + indent + "}\n"
+        + indent + "static inline void susfs_set_current_proc_no_su(void) {\n"
+        + indent + "\tset_thread_flag(TIF_PROC_NO_SU);\n"
+        + indent + "}\n"
+        + indent + "static inline void susfs_clear_current_proc_no_su(void) {\n"
+        + indent + "\tclear_thread_flag(TIF_PROC_NO_SU);\n"
+        + indent + "}\n"
     )
     content = content[:match.start()] + helper_block + content[match.end():]
     if any(content.count(name) != 1 for name in helper_names):
