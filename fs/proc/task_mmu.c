@@ -16,6 +16,13 @@
 #include <linux/mm_inline.h>
 #include <linux/ctype.h>
 
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MAP)
+#include <linux/susfs_def.h>
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
+#endif
+
 #include <asm/elf.h>
 #include <asm/uaccess.h>
 #include <asm/tlbflush.h>
@@ -344,9 +351,16 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 	if (file) {
 		struct inode *inode = file_inode(vma->vm_file);
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+		if (SUSFS_IS_INODE_SUS_MAP(inode))
+			return;
+#endif
 		dev = inode->i_sb->s_dev;
 		ino = inode->i_ino;
 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
+#endif
 	}
 
 	/* We don't show the stack guard page in /proc/maps */
@@ -681,6 +695,12 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 	struct proc_maps_private *priv = m->private;
 	struct vm_area_struct *vma = v;
 	struct mem_size_stats mss_stack;
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	if (vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))) {
+		m_cache_vma(m, vma);
+		return 0;
+	}
+#endif
 	struct mem_size_stats *mss;
 	struct mm_walk smaps_walk = {
 		.pmd_entry = smaps_pte_range,
