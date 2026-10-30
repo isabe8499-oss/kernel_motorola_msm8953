@@ -1420,6 +1420,9 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 	unsigned long svpfn;
 	unsigned long start_vaddr;
 	unsigned long end_vaddr;
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	struct vm_area_struct *vma;
+#endif
 	int copied = 0;
 
 	if (!task)
@@ -1480,6 +1483,23 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 		if (end < start_vaddr || end > end_vaddr)
 			end = end_vaddr;
 		down_read(&mm->mmap_sem);
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+		vma = find_vma(mm, start_vaddr);
+		if (vma && vma->vm_start > start_vaddr && vma->vm_start < end) {
+			end = vma->vm_start;
+		} else if (vma && vma->vm_start <= start_vaddr) {
+			if (vma->vm_file &&
+			    SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file))) {
+				if (vma->vm_end < end)
+					end = vma->vm_end;
+				up_read(&mm->mmap_sem);
+				start_vaddr = end;
+				continue;
+			}
+			if (vma->vm_end < end)
+				end = vma->vm_end;
+		}
+#endif
 		ret = walk_page_range(start_vaddr, end, &pagemap_walk);
 		up_read(&mm->mmap_sem);
 		start_vaddr = end;
