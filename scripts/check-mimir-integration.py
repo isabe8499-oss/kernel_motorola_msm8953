@@ -70,7 +70,11 @@ if SUSFS_H.is_file():
 hook_checks = {
     "fs/namei.c": ("susfs_is_inode_sus_path", "susfs_open_redirect_spoof_do_sys_openat"),
     "fs/stat.c": ("susfs_sus_kstat_spoof_generic_fillattr",),
-    "fs/proc/task_mmu.c": ("susfs_sus_kstat_spoof_show_map_vma",),
+    "fs/proc/task_mmu.c": (
+        "susfs_sus_kstat_spoof_show_map_vma",
+        "SUSFS_IS_INODE_SUS_MAP",
+    ),
+    "fs/proc/base.c": ("SUSFS_IS_INODE_SUS_MAP",),
     "drivers/kernelsu": ("susfs_init",),
 }
 for rel, markers in hook_checks.items():
