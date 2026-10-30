@@ -15,6 +15,10 @@
 #include <linux/syscalls.h>
 #include <linux/pagemap.h>
 
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
+#endif
+
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
 
@@ -44,6 +48,9 @@ void generic_fillattr(struct inode *inode, struct kstat *stat)
 	stat->ctime = inode->i_ctime;
 	stat->blksize = (1 << inode->i_blkbits);
 	stat->blocks = inode->i_blocks;
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	susfs_sus_kstat_spoof_generic_fillattr(inode, stat);
+#endif
 }
 
 EXPORT_SYMBOL(generic_fillattr);
