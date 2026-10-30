@@ -69,6 +69,10 @@ if SUSFS_H.is_file():
 # These feature hooks must exist in the kernel tree, not merely in Kconfig.
 hook_checks = {
     "fs/namei.c": ("susfs_is_inode_sus_path", "susfs_open_redirect_spoof_do_sys_openat"),
+    "fs/readdir.c": (
+        "susfs_is_hidden_dirent(buf->sb, ino)",
+        "susfs_readdir_get_sb",
+    ),
     "fs/stat.c": ("susfs_sus_kstat_spoof_generic_fillattr",),
     "fs/proc/task_mmu.c": (
         "susfs_sus_kstat_spoof_show_map_vma",
