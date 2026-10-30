@@ -112,6 +112,20 @@ new_init = '''#elif defined(CONFIG_KSU_MANUAL_HOOK)
 '''
 replace_once(init, old_init, new_init, "init Manual Hook + SUSFS")
 
+# The SUSFS feature must not override the selected Manual Hook path in the
+# runtime initrc/input dispatcher. The vfs_fstat helper belongs to Inline Hook.
+runtime = kernel / "runtime/ksud_integration.c"
+old_runtime = """#elif defined(CONFIG_KSU_SUSFS)
+    DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"""
+new_runtime = """#elif defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)
+    DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);"""
+replace_once(runtime, old_runtime, new_runtime, "runtime Manual Hook precedence")
+old_fstat = """#ifdef CONFIG_KSU_SUSFS
+void ksu_handle_vfs_fstat"""
+new_fstat = """#if defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_KSU_MANUAL_HOOK)
+void ksu_handle_vfs_fstat"""
+replace_once(runtime, old_fstat, new_fstat, "runtime Inline Hook-only fstat")
+
 # 4) Force the user-pointer handler ABI for old syscall APIs, even with SUSFS.
 sucompat_h = kernel / "feature/sucompat.h"
 old_proto = "#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_faccessat"
@@ -126,7 +140,7 @@ old_stat = "#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_stat"
 new_stat = "#if defined(CONFIG_KSU_SUSFS) && !defined(KSU_COMPAT_LEGACY_USERPATH)\nint ksu_handle_stat"
 replace_once(sucompat_c, old_stat, new_stat, "sucompat.c stat ABI")
 
-# 5) Static-key interface is not available in 3.18; the upstream compat
+# 6) Static-key interface is not available in 3.18; the upstream compat
 #    header correctly leaves KSU_COMPAT_USE_STATIC_KEY undefined before 4.3.
 compat_h = kernel / "compat/kernel_compat.h"
 compat_text = compat_h.read_text()
