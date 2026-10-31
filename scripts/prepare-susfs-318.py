@@ -176,7 +176,7 @@ patch_susfs_def_header(def_path)
 replace_once(
     def_path,
     "#define TIF_PROC_UMOUNTED 33",
-    "#define TIF_PROC_UMOUNTED 33\n#define TIF_PROC_NO_SU 34",
+    "#define TIF_PROC_UMOUNTED 33\n#define TIF_PROC_NO_SU 34\n#define TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT 35",
     "SUSFS/BakaSU no-su thread flag",
 )
 
@@ -186,6 +186,9 @@ def patch_no_su_helpers(path):
         "susfs_is_current_proc_no_su",
         "susfs_set_current_proc_no_su",
         "susfs_clear_current_proc_no_su",
+        "susfs_is_current_proc_umounted_for_zygote_next",
+        "susfs_set_current_proc_umounted_for_zygote_next",
+        "susfs_clear_current_proc_umounted_for_zygote_next",
     )
     counts = {name: content.count(name) for name in helper_names}
     if all(count == 1 for count in counts.values()):
@@ -223,6 +226,15 @@ def patch_no_su_helpers(path):
         + indent + "}\n"
         + indent + "static inline void susfs_clear_current_proc_no_su(void) {\n"
         + indent + "\tclear_thread_flag(TIF_PROC_NO_SU);\n"
+        + indent + "}\n"
+        + indent + "static inline bool susfs_is_current_proc_umounted_for_zygote_next(void) {\n"
+        + indent + "\treturn likely(test_thread_flag(TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT));\n"
+        + indent + "}\n"
+        + indent + "static inline void susfs_set_current_proc_umounted_for_zygote_next(void) {\n"
+        + indent + "\tset_thread_flag(TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);\n"
+        + indent + "}\n"
+        + indent + "static inline void susfs_clear_current_proc_umounted_for_zygote_next(void) {\n"
+        + indent + "\tclear_thread_flag(TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT);\n"
         + indent + "}\n"
     )
     content = content[:match.start()] + helper_block + content[match.end():]
