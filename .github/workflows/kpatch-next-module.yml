@@ -1,0 +1,72 @@
+name: Package KPatch-Next Module
+
+on:
+  push:
+    branches:
+      - integration/bakasu-35253-susfs22-nomount
+    paths:
+      - '.github/workflows/kpatch-next-module.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-kpatch-next-module:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout KPatch-Next-Module source
+        uses: actions/checkout@v5
+        with:
+          repository: KernelSU-Next/KPatch-Next-Module
+          ref: main
+          path: KPatch-Next-Module
+          fetch-depth: 0
+
+      - name: Pin and verify upstream source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git -C KPatch-Next-Module rev-parse HEAD)"
+          echo "KPatch-Next-Module upstream revision: $ACTUAL"
+          echo "UPSTREAM_SHA=$ACTUAL" >> "$GITHUB_ENV"
+          test -f KPatch-Next-Module/build.sh
+          test -f KPatch-Next-Module/module/patch/boot_patch.sh
+          grep -q 'CONFIG_KALLSYMS_ALL=y' KPatch-Next-Module/module/patch/boot_patch.sh
+          grep -q 'CONFIG_KPM=y' KPatch-Next-Module/module/patch/boot_patch.sh
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq unzip zip git
+
+      - name: Build official KPatch-Next-Module package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd KPatch-Next-Module
+          bash build.sh
+          test -s out/KPatch-Next-*.zip
+          unzip -t out/KPatch-Next-*.zip
+          sha256sum out/KPatch-Next-*.zip | tee ../KPatch-Next-SHA256.txt
+          cp out/KPatch-Next-*.zip ../
+
+      - name: Upload KPatch-Next flashable module
+        uses: actions/upload-artifact@v4
+        with:
+          name: KPatch-Next-Module
+          path: |
+            KPatch-Next-*.zip
+            KPatch-Next-SHA256.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish upstream provenance
+        run: |
+          {
+            echo "Upstream repository: https://github.com/KernelSU-Next/KPatch-Next-Module"
+            echo "Upstream commit: $UPSTREAM_SHA"
+            echo "Kernel requirement: arm64 and CONFIG_KALLSYMS_ALL=y"
+            echo "This artifact is the KPatch-Next manager module; it patches boot.img at install time."
+            echo "It is separate from the Mimir kernel ZIP and does not embed CONFIG_KPM."
+          } > KPatch-Next-PROVENANCE.txt
