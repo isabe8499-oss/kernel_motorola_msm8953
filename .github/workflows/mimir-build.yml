@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/mimir-build.yml'
       - 'scripts/**'
+      - '.github/workflows/kpatch-next-module.yml'
       - 'arch/arm64/configs/deen_defconfig'
       - 'drivers/**'
       - 'fs/**'
