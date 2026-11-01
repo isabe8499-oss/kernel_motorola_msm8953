@@ -16,6 +16,9 @@ SUSFS_C = ROOT / "fs/susfs.c"
 SUSFS_H = ROOT / "include/linux/susfs.h"
 SUSFS_DEF_H = ROOT / "include/linux/susfs_def.h"
 
+# KPatch-Next runs as an external boot-image patcher, not CONFIG_KPM.
+# Its current KPatch-Next-Module boot_patch.sh explicitly requires KALLSYMS_ALL
+# and aborts when it detects a kernel built with CONFIG_KPM=y.
 required_symbols = [
     "CONFIG_KSU=y",
     "CONFIG_KSU_MANUAL_HOOK=y",
