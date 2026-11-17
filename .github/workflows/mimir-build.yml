@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - integration/bakasu-35253-susfs22-nomount
+      - experimental/nomount-2.3.0-linux-3.18
     paths:
       - '.github/workflows/mimir-build.yml'
       - 'scripts/**'
