@@ -174,7 +174,7 @@ if missing:
         "MIMIR INTEGRATION GATE: BLOCKED — refusing to produce a flashable ZIP.",
         *[f" - {item}" for item in missing],
         "",
-        "The current tree does not yet prove the complete BakaSU + SUSFS 2.2.0 + NoMount 2.2.0 integration.",
+        "The current tree does not yet prove the complete BakaSU + SUSFS 2.2.0 + NoMount 2.3.0 integration.",
     ]
     print("\n".join(report))
     (ROOT / "mimir-integration-gate.txt").write_text("\n".join(report) + "\n")
