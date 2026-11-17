@@ -144,4 +144,4 @@ jobs:
             CONFIG_NOMOUNT; do
               grep -q "^${symbol}=y$" "$DEFCONFIG"
           done
-          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.3.0 features."
