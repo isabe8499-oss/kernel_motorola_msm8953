@@ -102,6 +102,38 @@ replace_once(
     "NoMount 3.18 port marker and compat syscall helper",
 )
 
+replace_once(
+    nomount_h,
+    """#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
+# define nm_lookup_one_len_unlocked(name, dentry, len) lookup_one_unlocked(&nop_mnt_idmap, &(struct qstr)QSTR_INIT((name), (len)), dentry)
+#else
+# define nm_lookup_one_len_unlocked lookup_one_len_unlocked
+#endif""",
+    """#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+/* Linux 3.18 lacks lookup_one_len_unlocked(); take the backing parent lock. */
+static inline struct dentry *nm_lookup_one_len_unlocked(const char *name,
+                                                        struct dentry *base,
+                                                        int len)
+{
+    struct dentry *result;
+    struct inode *inode;
+
+    if (unlikely(!base || !(inode = base->d_inode))
+        return ERR_PTR(-ENOENT);
+
+    mutex_lock_nested(&inode->i_mutex, I_MUTEX_PARENT);
+    result = lookup_one_len(name, base, len);
+    mutex_unlock(&inode->i_mutex);
+    return result;
+}
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
+# define nm_lookup_one_len_unlocked(name, dentry, len) lookup_one_unlocked(&nop_mnt_idmap, &(struct qstr)QSTR_INIT((name), (len)), dentry)
+#else
+# define nm_lookup_one_len_unlocked lookup_one_len_unlocked
+#endif""",
+    "NoMount Linux 3.18 unlocked lookup helper",
+)
+
 # iterate_shared was added in 4.7. Linux 3.18 exposes only ->iterate.
 replace_once(
     nomount_h,
@@ -166,6 +198,8 @@ replace_once(
     """#include <linux/compat.h>
 #include <linux/dcache.h>
 #include <linux/spinlock.h>
+#include <linux/namei.h>
+#include <linux/mutex.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
 extern spinlock_t inode_sb_list_lock;
