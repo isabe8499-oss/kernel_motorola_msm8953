@@ -537,7 +537,7 @@ wrap_region(
     "    if (with_xattr && sb->s_xattr) {",
     "\n\n    return 0;\n}\n\nstatic inline int nm_hijack_dir_ops",
     "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n",
-    "\\n#endif /* Linux 4.4+ superblock xattr handler array */\\n",
+    "\n#endif /* Linux 4.4+ superblock xattr handler array */\n",
     "NoMount modern superblock xattr handler array",
 )
 
