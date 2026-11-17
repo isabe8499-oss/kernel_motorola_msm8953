@@ -33,6 +33,9 @@ required_symbols = [
     "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y",
     "CONFIG_KSU_SUSFS_ENABLE_LOG=y",
     "CONFIG_NOMOUNT=y",
+    "CONFIG_MODULES=y",
+    "CONFIG_MODULE_UNLOAD=y",
+    "CONFIG_MODVERSIONS=y",
 ]
 
 missing = []
@@ -114,7 +117,7 @@ for rel, markers in hook_checks.items():
         if marker not in content:
             missing.append(f"missing SUSFS integration hook {marker} ({rel})")
 
-# Require a source-level NoMount port and protocol v22 declaration.
+# Require a source-level NoMount v2.3.0 port and version 23 declaration.
 nomount_candidates = [
     ROOT / "fs/nomount/nomount.c",
     ROOT / "fs/nomount/Makefile",
@@ -129,8 +132,8 @@ if nomount_candidates[0].is_file():
     nomount_text = nomount_candidates[0].read_text(errors="replace")
 if (ROOT / "fs/nomount/nomount.h").is_file():
     nomount_header = (ROOT / "fs/nomount/nomount.h").read_text(errors="replace")
-if '#define NOMOUNT_BASE_VERSION "22"' not in nomount_header:
-    missing.append("NoMount source is not the pinned v2.2.0/protocol-22 implementation")
+if '#define NOMOUNT_BASE_VERSION "23"' not in nomount_header:
+    missing.append("NoMount source is not the pinned v2.3.0/version-23 implementation")
 if "#define NM_LINUX_318_PORT 1" not in nomount_header:
     missing.append("NoMount Linux 3.18 compatibility port marker is missing")
 
@@ -179,7 +182,7 @@ if missing:
 
 success = [
     "MIMIR INTEGRATION GATE: PASS",
-    "BakaSU Manual Hook, SUSFS 2.2.0 hooks and NoMount protocol v22 are present.",
+    "BakaSU Manual Hook, SUSFS 2.2.0 hooks and NoMount v2.3.0/version 23 source is present.",
 ]
 print("\n".join(success))
 (ROOT / "mimir-integration-gate.txt").write_text("\n".join(success) + "\n")

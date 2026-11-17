@@ -88,7 +88,7 @@ jobs:
           test "$(readlink drivers/kernelsu)" = "../KernelSU/kernel"
           test -e NoMount/.git
           NOMOUNT_ACTUAL="$(git -C NoMount rev-parse HEAD)"
-          NOMOUNT_EXPECTED="bf1847f98fed382369c43bfd652cd93774b9b8e3"
+          NOMOUNT_EXPECTED="7914458ca71dfa3a8c162fa97fdb69332db7a690"
           echo "NoMount source: $NOMOUNT_ACTUAL"
           test "$NOMOUNT_ACTUAL" = "$NOMOUNT_EXPECTED"
           git -C NoMount cat-file -e "$NOMOUNT_EXPECTED^{commit}"
@@ -119,7 +119,7 @@ jobs:
       - name: Stage SUSFS v2.2.0 core with Linux 3.18 shims
         run: python3 scripts/prepare-susfs-318.py
 
-      - name: Stage pinned NoMount v2.2.0 source
+      - name: Stage pinned NoMount v2.3.0 source
         run: python3 scripts/stage-nomount-318.py
 
       - name: Gate complete BakaSU + SUSFS + NoMount integration

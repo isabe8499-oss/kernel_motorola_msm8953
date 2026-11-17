@@ -40,7 +40,7 @@ jobs:
         run: |
           test "$(git -C KernelSU rev-parse HEAD)" = "5785bdb8091304322f597f67d50e0b79f9815cb2"
           test "$(git -C SUSFS rev-parse HEAD)" = "4003ecf2d01c6d13fa8edf6c4f2607365738dc3d"
-          test "$(git -C NoMount rev-parse HEAD)" = "bf1847f98fed382369c43bfd652cd93774b9b8e3"
+          test "$(git -C NoMount rev-parse HEAD)" = "7914458ca71dfa3a8c162fa97fdb69332db7a690"
           test "$(git -C KernelSU rev-list --count HEAD)" = "4553"
 
       - name: Validate Python integration scripts
@@ -72,7 +72,7 @@ jobs:
           test -f include/linux/susfs.h
           grep -q '#define SUSFS_VERSION "v2.2.0"' include/linux/susfs.h
 
-      - name: Stage and assert NoMount Linux 3.18 adapters
+      - name: Stage and assert NoMount v2.3.0 Linux 3.18 adapters
         shell: bash
         run: |
           python3 scripts/stage-nomount-318.py
@@ -106,6 +106,117 @@ jobs:
           make O="$OUT_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 fs/nomount/nomount.o
           test -s "$OUT_DIR/fs/nomount/nomount.o"
           file "$OUT_DIR/fs/nomount/nomount.o"
+
+          # Independently prove the driver can be built as an LKM (.ko), without
+          # changing the shipping deen_defconfig (which stays CONFIG_NOMOUNT=y).
+          OUT_MODULES="$RUNNER_TEMP/mimir-nomount-lkm-build"
+          rm -rf "$OUT_MODULES"
+          make O="$OUT_MODULES" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- deen_defconfig
+          sed -i 's/^CONFIG_NOMOUNT=y$/CONFIG_NOMOUNT=m/' "$OUT_MODULES/.config"
+          make O="$OUT_MODULES" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -q '^CONFIG_MODULES=y
+
+      - name: Confirm requested kernel features are enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEFCONFIG="arch/arm64/configs/deen_defconfig"
+          for symbol in \
+            CONFIG_KSU \
+            CONFIG_KSU_MANUAL_HOOK \
+            CONFIG_KSU_SUSFS \
+            CONFIG_KSU_SUSFS_SUS_PATH \
+            CONFIG_KSU_SUSFS_SUS_MOUNT \
+            CONFIG_KSU_SUSFS_SUS_KSTAT \
+            CONFIG_KSU_SUSFS_SUS_MAP \
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            CONFIG_KSU_SUSFS_ENABLE_LOG \
+            CONFIG_NOMOUNT; do
+              grep -q "^${symbol}=y$" "$DEFCONFIG"
+          done
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ "$OUT_MODULES/.config"
+          grep -q '^CONFIG_MODULE_UNLOAD=y
+
+      - name: Confirm requested kernel features are enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEFCONFIG="arch/arm64/configs/deen_defconfig"
+          for symbol in \
+            CONFIG_KSU \
+            CONFIG_KSU_MANUAL_HOOK \
+            CONFIG_KSU_SUSFS \
+            CONFIG_KSU_SUSFS_SUS_PATH \
+            CONFIG_KSU_SUSFS_SUS_MOUNT \
+            CONFIG_KSU_SUSFS_SUS_KSTAT \
+            CONFIG_KSU_SUSFS_SUS_MAP \
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            CONFIG_KSU_SUSFS_ENABLE_LOG \
+            CONFIG_NOMOUNT; do
+              grep -q "^${symbol}=y$" "$DEFCONFIG"
+          done
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ "$OUT_MODULES/.config"
+          grep -q '^CONFIG_MODVERSIONS=y
+
+      - name: Confirm requested kernel features are enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEFCONFIG="arch/arm64/configs/deen_defconfig"
+          for symbol in \
+            CONFIG_KSU \
+            CONFIG_KSU_MANUAL_HOOK \
+            CONFIG_KSU_SUSFS \
+            CONFIG_KSU_SUSFS_SUS_PATH \
+            CONFIG_KSU_SUSFS_SUS_MOUNT \
+            CONFIG_KSU_SUSFS_SUS_KSTAT \
+            CONFIG_KSU_SUSFS_SUS_MAP \
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            CONFIG_KSU_SUSFS_ENABLE_LOG \
+            CONFIG_NOMOUNT; do
+              grep -q "^${symbol}=y$" "$DEFCONFIG"
+          done
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ "$OUT_MODULES/.config"
+          grep -q '^CONFIG_NOMOUNT=m
+
+      - name: Confirm requested kernel features are enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEFCONFIG="arch/arm64/configs/deen_defconfig"
+          for symbol in \
+            CONFIG_KSU \
+            CONFIG_KSU_MANUAL_HOOK \
+            CONFIG_KSU_SUSFS \
+            CONFIG_KSU_SUSFS_SUS_PATH \
+            CONFIG_KSU_SUSFS_SUS_MOUNT \
+            CONFIG_KSU_SUSFS_SUS_KSTAT \
+            CONFIG_KSU_SUSFS_SUS_MAP \
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            CONFIG_KSU_SUSFS_ENABLE_LOG \
+            CONFIG_NOMOUNT; do
+              grep -q "^${symbol}=y$" "$DEFCONFIG"
+          done
+          echo "Defconfig enables the requested SUSFS v2.2.0 and NoMount v2.2.0 features."
+ "$OUT_MODULES/.config"
+          make O="$OUT_MODULES" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 fs/nomount/nomount.ko
+          test -s "$OUT_MODULES/fs/nomount/nomount.ko"
+          file "$OUT_MODULES/fs/nomount/nomount.ko"
 
       - name: Confirm requested kernel features are enabled
         shell: bash

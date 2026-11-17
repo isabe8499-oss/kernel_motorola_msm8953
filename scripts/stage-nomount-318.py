@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage NoMount v2.2.0 and apply the Linux 3.18 VFS compatibility layer.
+"""Stage NoMount v2.3.0 and apply the Linux 3.18 VFS compatibility layer.
 
 The adapter restores the legacy iterate, follow_link and inode xattr callbacks.
 CONFIG_NOMOUNT stays disabled in the device defconfig until the object and full
@@ -20,7 +20,7 @@ def write(path, content):
     path.write_text(content)
 
 FILES = ("nomount.c", "nomount.h", "Kconfig", "Makefile")
-EXPECTED = "bf1847f98fed382369c43bfd652cd93774b9b8e3"
+EXPECTED = "7914458ca71dfa3a8c162fa97fdb69332db7a690"
 
 import subprocess
 actual = subprocess.check_output(
@@ -82,8 +82,8 @@ replace_once(
 )
 replace_once(
     nomount_h,
-    '#define NOMOUNT_BASE_VERSION "22"',
-    '#define NOMOUNT_BASE_VERSION "22"\n#define NM_LINUX_318_PORT 1\n\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)\n#define in_compat_syscall() is_compat_task()\n#endif',
+    '#define NOMOUNT_BASE_VERSION "23"',
+    '#define NOMOUNT_BASE_VERSION "23"\n#define NM_LINUX_318_PORT 1\n\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)\n#define in_compat_syscall() is_compat_task()\n#endif',
     "NoMount 3.18 port marker and compat syscall helper",
 )
 
@@ -519,5 +519,5 @@ entry = "obj-$(CONFIG_NOMOUNT) += nomount/"
 if entry not in text:
     fs_makefile.write_text(text.rstrip() + "\n\n" + entry + "\n")
 
-print(f"Staged NoMount v2.2.0 ({actual}) under fs/nomount.")
-print("Linux 3.18 VFS adapters staged; CONFIG_NOMOUNT remains n pending compile/runtime validation.")
+print(f"Staged NoMount v2.3.0 ({actual}) under fs/nomount.")
+print("Linux 3.18 VFS adapters staged for NoMount v2.3.0; CONFIG_NOMOUNT policy remains controlled by deen_defconfig.")
