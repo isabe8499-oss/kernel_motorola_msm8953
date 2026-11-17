@@ -52,6 +52,21 @@ def replace_once(path, old, new, label):
         )
 
 
+def replace_all(path, old, new, expected, label):
+    content = path.read_text()
+    old_count = content.count(old)
+    new_count = content.count(new)
+    if old_count == expected and new_count == 0:
+        path.write_text(content.replace(old, new))
+    elif old_count == 0 and new_count == expected:
+        return
+    else:
+        raise SystemExit(
+            f"{label}: expected {expected} upstream or patched anchors; "
+            f"old={old_count}, new={new_count}"
+        )
+
+
 def wrap_region(path, start, end, opening, closing, label):
     content = path.read_text()
     if opening in content and closing in content:
@@ -185,12 +200,13 @@ replace_once(
     "NoMount legacy dcache name hash signature",
 )
 
-replace_once(
+replace_all(
     nomount_h,
     "    case BPF_FS_MAGIC:",
     """#ifdef BPF_FS_MAGIC
     case BPF_FS_MAGIC:
 #endif""",
+    2,
     "NoMount optional BPF filesystem magic",
 )
 
@@ -308,8 +324,8 @@ replace_once(
 
 replace_once(
     nomount_c,
+    "    if (!r_inode->i_op->listxattr) return 0;\n    return vfs_listxattr(info->r_path.dentry, buffer, size);",
     "    if (!r_inode || !r_inode->i_op || !r_inode->i_op->listxattr) return 0;\n    return vfs_listxattr(info->r_path.dentry, buffer, size);",
-    "    if (!r_inode) return 0;\n    return vfs_listxattr(info->r_path.dentry, buffer, size);",
     "NoMount preserve security listxattr fallback",
 )
 
@@ -323,14 +339,17 @@ old_get_link = """static const char *nm_get_link(struct dentry *dentry, struct i
 
     real_inode = d_backing_inode(info->r_path.dentry);
     target_dentry = dentry ? info->r_path.dentry : NULL;
-    if (real_inode && real_inode->i_op && real_inode->i_op->get_link) {
+    if (real_inode && real_inode->i_op->get_link) {
         return real_inode->i_op->get_link(target_dentry, real_inode, done);
     }
 
     return ERR_PTR(-EINVAL);
 }"""
 new_link_ops = """#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
-""" + old_get_link + """
+""" + old_get_link.replace(
+    "if (real_inode && real_inode->i_op->get_link)",
+    "if (real_inode && real_inode->i_op && real_inode->i_op->get_link)",
+) + """
 #else
 static void *nm_follow_link(struct dentry *dentry, struct nameidata *nd)
 {
@@ -479,17 +498,13 @@ replace_once(
     "NoMount legacy directory inode operations",
 )
 
-replace_once(
+wrap_region(
     nomount_c,
-    "    if (sb->s_xattr) {",
-    "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n    if (sb->s_xattr) {",
-    "NoMount modern superblock xattr guard start",
-)
-replace_once(
-    nomount_c,
-    "    }\n\n    list_add_tail_rcu(&nm_sop->list, &nm_sb_list);",
-    "    }\n#endif /* Linux 4.4+ superblock xattrs */\n\n    list_add_tail_rcu(&nm_sop->list, &nm_sb_list);",
-    "NoMount modern superblock xattr guard end",
+    "    if (with_xattr && sb->s_xattr) {",
+    "\n\n    return 0;\n}\n\nstatic inline int nm_hijack_dir_ops",
+    "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n",
+    "#endif /* Linux 4.4+ superblock xattr handler array */\n",
+    "NoMount modern superblock xattr handler array",
 )
 
 if "#define NM_LINUX_318_PORT 1" not in nomount_h.read_text():
