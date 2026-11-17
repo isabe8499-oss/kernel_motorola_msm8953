@@ -118,7 +118,7 @@ static inline struct dentry *nm_lookup_one_len_unlocked(const char *name,
     struct dentry *result;
     struct inode *inode;
 
-    if (unlikely(!base || !(inode = base->d_inode))
+    if (unlikely(!base || !(inode = base->d_inode)))
         return ERR_PTR(-ENOENT);
 
     mutex_lock_nested(&inode->i_mutex, I_MUTEX_PARENT);
@@ -306,7 +306,7 @@ write(nomount_c, source)
 wrap_region(
     nomount_c,
     "struct nm_xattr_proxy {",
-    "static int nm_d_revalidate_common",
+    "static int nm_shutdown_sync_fs",
     "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n",
     "#endif /* Linux 4.4+ xattr_handler ABI */\n\n",
     "NoMount modern xattr handler callbacks",
@@ -537,8 +537,81 @@ wrap_region(
     "    if (with_xattr && sb->s_xattr) {",
     "\n\n    return 0;\n}\n\nstatic inline int nm_hijack_dir_ops",
     "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)\n",
-    "#endif /* Linux 4.4+ superblock xattr handler array */\n",
+    "\\n#endif /* Linux 4.4+ superblock xattr handler array */\\n",
     "NoMount modern superblock xattr handler array",
+)
+
+rename_old = """static int nm_hijacked_rename(IDMAP_ARG struct inode *old_dir, struct dentry *old_dentry,
+                               struct inode *new_dir, struct dentry *new_dentry, unsigned int flags)
+{
+    struct inode *old_inode = d_inode(old_dentry);
+    struct inode *new_inode = d_inode(new_dentry);
+    struct nm_dir_ops *iop;
+
+    if ((old_inode && nm_inode_is_virtual(old_inode)) || (new_inode && nm_inode_is_virtual(new_inode)))
+        return -EPERM;
+
+    iop = nm_get_nm_iop(smp_load_acquire(&old_dir->i_op));
+    if (iop && iop->orig_iop && iop->orig_iop->rename)
+        return iop->orig_iop->rename(IDMAP_CALL old_dir, old_dentry, new_dir, new_dentry, flags);
+    return -EPERM;
+}"""
+rename_new = """#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+static int nm_hijacked_rename2(struct inode *old_dir, struct dentry *old_dentry,
+                                struct inode *new_dir, struct dentry *new_dentry,
+                                unsigned int flags)
+{
+    struct inode *old_inode = d_inode(old_dentry);
+    struct inode *new_inode = d_inode(new_dentry);
+    struct nm_dir_ops *iop;
+
+    if ((old_inode && nm_inode_is_virtual(old_inode)) || (new_inode && nm_inode_is_virtual(new_inode)))
+        return -EPERM;
+
+    iop = nm_get_nm_iop(smp_load_acquire(&old_dir->i_op));
+    if (!iop || !iop->orig_iop)
+        return -EPERM;
+    if (iop->orig_iop->rename2)
+        return iop->orig_iop->rename2(old_dir, old_dentry, new_dir, new_dentry, flags);
+    if (flags)
+        return -EINVAL;
+    if (iop->orig_iop->rename)
+        return iop->orig_iop->rename(old_dir, old_dentry, new_dir, new_dentry);
+    return -EPERM;
+}
+
+static int nm_hijacked_rename(struct inode *old_dir, struct dentry *old_dentry,
+                              struct inode *new_dir, struct dentry *new_dentry)
+{
+    return nm_hijacked_rename2(old_dir, old_dentry, new_dir, new_dentry, 0);
+}
+#else
+static int nm_hijacked_rename(IDMAP_ARG struct inode *old_dir, struct dentry *old_dentry,
+                               struct inode *new_dir, struct dentry *new_dentry, unsigned int flags)
+{
+    struct inode *old_inode = d_inode(old_dentry);
+    struct inode *new_inode = d_inode(new_dentry);
+    struct nm_dir_ops *iop;
+
+    if ((old_inode && nm_inode_is_virtual(old_inode)) || (new_inode && nm_inode_is_virtual(new_inode)))
+        return -EPERM;
+
+    iop = nm_get_nm_iop(smp_load_acquire(&old_dir->i_op));
+    if (iop && iop->orig_iop && iop->orig_iop->rename)
+        return iop->orig_iop->rename(IDMAP_CALL old_dir, old_dentry, new_dir, new_dentry, flags);
+    return -EPERM;
+}
+#endif"""
+replace_once(nomount_c, rename_old, rename_new, "NoMount legacy rename/rename2 ABI")
+
+replace_once(
+    nomount_c,
+    "        ops->fake_iop.rename = nm_hijacked_rename;",
+    """        ops->fake_iop.rename = nm_hijacked_rename;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+        ops->fake_iop.rename2 = nm_hijacked_rename2;
+#endif""",
+    "NoMount intercept legacy rename2 callbacks",
 )
 
 if "#define NM_LINUX_318_PORT 1" not in nomount_h.read_text():
